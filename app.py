@@ -244,12 +244,10 @@ def _download_worker(dl_id: str, url: str, filename: str, height=None):
     opts = {
         "format": core.format_for_height(height),
         "outtmpl": outtmpl,
-        "progress_hooks": [_dl_progress_hook(dl)],
-        "postprocessors": core._postprocessors(),
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "merge_output_format": "mp4",
+        "progress_hooks": [_dl_progress_hook(dl)],
         "socket_timeout": 60,
         "retries": 3,
         "fragment_retries": 3,
@@ -264,34 +262,13 @@ def _download_worker(dl_id: str, url: str, filename: str, height=None):
             raise RuntimeError("Tải xong nhưng không tìm thấy file.")
 
         src = os.path.join(tmpdir, files[0])
-        stem = os.path.splitext(files[0])[0]
-        final = os.path.join(tmpdir, stem + ".mp4")
-
-        # Re-encode / remux to H.264 mp4 so QuickTime can open the file.
-        if core._FFMPEG:
-            dl["status"] = "processing"
-            dl["percent"] = 100
-            tmp_out = final if src != final else os.path.join(tmpdir, stem + "_out.mp4")
-            ok = core.ensure_h264_mp4(src, tmp_out)
-            if ok and os.path.exists(tmp_out):
-                if src != tmp_out:
-                    try:
-                        os.remove(src)
-                    except OSError:
-                        pass
-                if tmp_out != final:
-                    os.replace(tmp_out, final)
-                src = final
-            # Update filename to reflect the .mp4 output
-            files[0] = os.path.basename(src)
-
-        dl["path"] = src
+        dl["path"]     = src
         dl["filename"] = files[0]
-        dl["status"] = "done"
-        dl["percent"] = 100
+        dl["status"]   = "done"
+        dl["percent"]  = 100
     except Exception as e:
         dl["status"] = "error"
-        dl["error"] = str(e).splitlines()[0]
+        dl["error"]  = str(e).splitlines()[0]
         shutil.rmtree(tmpdir, ignore_errors=True)
         dl["tmpdir"] = None
 

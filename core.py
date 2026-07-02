@@ -10,7 +10,6 @@ Only intended for public videos or videos the user owns.
 
 import os
 import re
-import subprocess
 import unicodedata
 
 import yt_dlp
@@ -24,15 +23,6 @@ _SUPPORTED_DOMAINS = (
     "tiktok.com", "vm.tiktok.com",
 )
 
-import shutil as _shutil
-
-# If ffmpeg is available, download the absolute best quality (any codec) and let
-# yt-dlp re-encode/remux to H.264 mp4 so QuickTime can open it.
-# Without ffmpeg we fall back to the best native H.264 stream available.
-_FFMPEG  = _shutil.which("ffmpeg")
-_FFPROBE = _shutil.which("ffprobe")
-
-
 def _label_for_height(h: int) -> str:
     if h >= 2160:
         return f"4K ({h}p)"
@@ -42,71 +32,17 @@ def _label_for_height(h: int) -> str:
 
 
 def format_for_height(height=None) -> str:
-    """Return yt-dlp format string for the given max height (None = best available)."""
+    """Best native H.264 stream — no ffmpeg merge/encode needed."""
     cap = f"[height<={height}]" if height else ""
-    if _FFMPEG:
-        return (
-            f"bestvideo{cap}+bestaudio"
-            f"/best{cap}"
-            "/bestvideo+bestaudio/best"
-        )
     return (
         f"bestvideo{cap}[vcodec^=avc1]+bestaudio[acodec^=mp4a]"
         f"/bestvideo{cap}[vcodec^=avc]+bestaudio"
         f"/bestvideo{cap}+bestaudio"
-        f"/best{cap}/best"
+        f"/best{cap}[ext=mp4]/best{cap}/best"
     )
 
 
 PREFERRED_FORMAT = format_for_height(None)
-
-
-def _postprocessors():
-    """Remux to mp4 container (stream-copy only; H.264 re-encoding done separately)."""
-    if not _FFMPEG:
-        return []
-    return [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}]
-
-
-def ensure_h264_mp4(src: str, out: str) -> bool:
-    """
-    Guarantee the output file is H.264 video + AAC audio inside an mp4 container,
-    which is required for QuickTime/macOS compatibility.
-
-    - If the source video is already H.264: stream-copy (fast, lossless).
-    - Otherwise (VP9, AV1, HEVC …): re-encode to H.264 CRF-18 (high quality).
-    Returns True on success.
-    """
-    if not _FFMPEG:
-        return False
-
-    try:
-        probe_bin = _FFPROBE or (_FFMPEG.replace("ffmpeg", "ffprobe") if _FFMPEG else None)
-        r = subprocess.run(
-            [probe_bin, "-v", "error",
-             "-select_streams", "v:0",
-             "-show_entries", "stream=codec_name",
-             "-of", "default=nw=1:nk=1", src],
-            capture_output=True, text=True, timeout=30,
-        )
-        vcodec = r.stdout.strip().lower()
-    except Exception:
-        vcodec = ""
-
-    is_h264 = vcodec in ("h264", "avc", "avc1")
-
-    if is_h264:
-        cmd = [_FFMPEG, "-i", src, "-c", "copy", "-movflags", "+faststart", "-y", out]
-    else:
-        cmd = [
-            _FFMPEG, "-i", src,
-            "-c:v", "libx264", "-crf", "23", "-preset", "ultrafast",
-            "-c:a", "aac", "-b:a", "128k",
-            "-movflags", "+faststart", "-y", out,
-        ]
-
-    result = subprocess.run(cmd, capture_output=True, timeout=7200)
-    return result.returncode == 0
 
 
 def strip_emoji(text: str) -> str:
@@ -359,11 +295,9 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
         "format": PREFERRED_FORMAT,
         "outtmpl": output_template,
         "progress_hooks": [_make_progress_hook(on_event)],
-        "postprocessors": _postprocessors(),
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "merge_output_format": "mp4",
     }
 
     try:
