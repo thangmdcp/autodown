@@ -249,19 +249,32 @@
     });
   }
 
-  // ── Core: trigger browser download ───────────────────────────────────────
+  // ── Core: fetch file from server → blob → browser download ──────────────
 
-  function streamFile(idx) {
+  async function streamFile(idx) {
     const dl = rowDl[idx];
     if (!dl || dl.status !== "dl_done") return;
-    const a = Object.assign(document.createElement("a"), {
-      href:     `/api/dl_file/${dl.dlId}`,
-      download: dl.filename || "video.mp4",
-    });
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    dl.status = "saved";
+
+    dl.status = "saving";
+    renderRow(idx);
+
+    try {
+      const res = await fetch(`/api/dl_file/${dl.dlId}`);
+      if (!res.ok) throw new Error(`Server lỗi ${res.status} — thử lại sau.`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement("a"), {
+        href: blobUrl, download: dl.filename || "video.mp4",
+      });
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+      dl.status = "saved";
+    } catch (e) {
+      dl.status = "save_error";
+      dl.error  = e.message;
+    }
     renderRow(idx);
   }
 

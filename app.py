@@ -257,12 +257,17 @@ def _download_worker(dl_id: str, url: str, height=None):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
-        files = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
+        video_exts = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v", ".3gp", ".flv"}
+        files = [f for f in os.listdir(tmpdir)
+                 if not f.endswith(".part")
+                 and os.path.splitext(f)[1].lower() in video_exts]
+        if not files:
+            files = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
         if not files:
             raise RuntimeError("Tải xong nhưng không tìm thấy file.")
 
         src = os.path.join(tmpdir, files[0])
-        ext = os.path.splitext(files[0])[1] or ".mp4"
+        ext = ".mp4"  # always serve as .mp4
 
         caption = ""
         if info:
@@ -345,7 +350,7 @@ def dl_file(dl_id: str):
     @after_this_request
     def _cleanup(response):
         def _rm():
-            time.sleep(15)
+            time.sleep(300)
             DOWNLOADS.pop(dl_id, None)
             if tmpdir:
                 shutil.rmtree(tmpdir, ignore_errors=True)
