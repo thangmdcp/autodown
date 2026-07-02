@@ -267,7 +267,7 @@ def _download_worker(dl_id: str, url: str, height=None):
             raise RuntimeError("Tải xong nhưng không tìm thấy file.")
 
         src = os.path.join(tmpdir, files[0])
-        ext = ".mp4"  # always serve as .mp4
+        ext = os.path.splitext(files[0])[1] or ".mp4"
 
         caption = ""
         if info:

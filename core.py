@@ -32,13 +32,13 @@ def _label_for_height(h: int) -> str:
 
 
 def format_for_height(height=None) -> str:
-    """Best native H.264 stream — no ffmpeg merge/encode needed."""
+    """Best combined (no-merge) stream for playback without ffmpeg."""
     cap = f"[height<={height}]" if height else ""
     return (
-        f"bestvideo{cap}[vcodec^=avc1]+bestaudio[acodec^=mp4a]"
-        f"/bestvideo{cap}[vcodec^=avc]+bestaudio"
-        f"/bestvideo{cap}+bestaudio"
-        f"/best{cap}[ext=mp4]/best{cap}/best"
+        f"best{cap}[ext=mp4][vcodec^=avc1]"
+        f"/best{cap}[ext=mp4][vcodec^=avc]"
+        f"/best{cap}[ext=mp4]"
+        f"/best{cap}"
     )
 
 
