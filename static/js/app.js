@@ -159,19 +159,22 @@
       platform: detectPlatform(url),
     }));
     showTable();
-    // Start all downloads immediately — no separate probe step
-    urls.forEach((_, idx) => {
-      startDownloadJob(idx)
-        .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
-        .catch(() => {});
-    });
+    // Process links one by one: download → save → next
+    (async () => {
+      for (let idx = 0; idx < urls.length; idx++) {
+        try {
+          await startDownloadJob(idx);
+          if (rowDl[idx]?.status === "dl_done") await streamFile(idx);
+        } catch (e) {}
+      }
+    })();
   });
 
   // ── Per-row "Tải & Lưu" ───────────────────────────────────────────────────
 
   async function downloadAndSaveRow(idx) {
     await startDownloadJob(idx);
-    if (rowDl[idx]?.status === "dl_done") streamFile(idx);
+    if (rowDl[idx]?.status === "dl_done") await streamFile(idx);
   }
 
   // ── Core: download job (returns when done or throws) ──────────────────────
@@ -279,8 +282,6 @@
       a.download = probeItems.length > 1
         ? `${String(idx + 1).padStart(2, "0")}_${baseName}`
         : baseName;
-      // Stagger browser save dialogs 350ms apart so browser never blocks them
-      if (probeItems.length > 1) await new Promise(r => setTimeout(r, idx * 350));
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -427,7 +428,7 @@
       case "queued":      return badge("probing",     IC.spin,  "Chuẩn bị");
       case "downloading": return badge("downloading", IC.spin,  "Đang tải");
       case "processing":  return badge("downloading", IC.spin,  "Đang xử lý");
-      case "dl_done":     return badge("downloading", IC.spin,  "Đang lưu");
+      case "dl_done":     return badge("done",        IC.check, "Tải xong");
       case "saving":      return badge("probing",     IC.spin,  "Đang lưu");
       case "saved":       return badge("done",        IC.check, "Đã lưu ✓");
       case "dl_error":    return badge("error",       IC.x,     "Lỗi tải");

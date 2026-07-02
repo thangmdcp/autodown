@@ -132,8 +132,8 @@ PROBES: dict = {}
 
 # dl_id -> {status, percent, speed, eta, path, filename, tmpdir, error, created}
 DOWNLOADS: dict = {}
-# Max 2 concurrent yt-dlp downloads to stay within Render free-tier RAM (~512 MB)
-_DL_SEM = threading.Semaphore(2)
+# 1 concurrent yt-dlp download — client processes links serially so this is the natural limit
+_DL_SEM = threading.Semaphore(1)
 
 
 # ── Probe phase ────────────────────────────────────────────────────────────────
