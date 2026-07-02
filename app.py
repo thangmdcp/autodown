@@ -4,6 +4,7 @@ app.py — FB Downloader web app (Flask, localhost only).
 Two-phase flow: probe (caption only) → per-item download → stream to browser.
 """
 
+import concurrent.futures
 import json
 import os
 import secrets
@@ -148,6 +149,9 @@ def _new_probe_item(url: str) -> dict:
     }
 
 
+_PROBE_TIMEOUT = 75  # seconds per URL
+
+
 def _probe_one_item(item: dict):
     item["status"] = "probing"
     try:
@@ -159,19 +163,26 @@ def _probe_one_item(item: dict):
     except core.DownloadFailure as e:
         item["status"] = "error"
         item["error"] = str(e).splitlines()[0]
+    except Exception as e:
+        item["status"] = "error"
+        item["error"] = f"Lỗi: {str(e)[:200]}"
 
 
 def _probe_worker(probe_id: str):
     probe = PROBES[probe_id]
-    # Probe all URLs in parallel — each gets its own thread.
-    threads = [
-        threading.Thread(target=_probe_one_item, args=(item,), daemon=True)
-        for item in probe["items"]
-    ]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_item = {
+            executor.submit(_probe_one_item, item): item
+            for item in probe["items"]
+        }
+        done, not_done = concurrent.futures.wait(
+            future_to_item.keys(), timeout=_PROBE_TIMEOUT
+        )
+        for future in not_done:
+            item = future_to_item[future]
+            item["status"] = "error"
+            item["error"] = "Quá thời gian chờ. Video có thể cần đăng nhập hoặc bị chặn."
+            future.cancel()
     probe["finished"] = True
 
 
@@ -186,7 +197,7 @@ def probe():
     urls = [u.strip() for u in urls_raw.splitlines()
             if u.strip() and not u.strip().startswith("#")]
     if not urls:
-        return jsonify({"error": "Vui lòng nhập ít nhất 1 link Facebook."}), 400
+        return jsonify({"error": "Vui lòng nhập ít nhất 1 link."}), 400
 
     probe_id = uuid.uuid4().hex[:12]
     PROBES[probe_id] = {

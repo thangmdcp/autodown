@@ -18,9 +18,12 @@
 
   // ── State ─────────────────────────────────────────────────────────────────
 
-  let probeId    = null;
-  let probeTimer = null;
-  let probeItems = [];
+  let probeId        = null;
+  let probeTimer     = null;
+  let probeItems     = [];
+  let probeStartTime = 0;
+
+  const PROBE_TIMEOUT_MS = 90_000; // 90s client-side safety net
 
   const rowDl = {};   // idx → {dlId, status, percent, speed, eta, filename, error}
 
@@ -172,8 +175,12 @@
       const data = await res.json();
       if (!res.ok) { setBusy(false); showErr(data.error || "Lỗi server."); return; }
 
-      probeId    = data.probe_id;
-      probeItems = urls.map(url => ({ url, status: "queued", caption: "", resolutions: [], error: "" }));
+      probeId        = data.probe_id;
+      probeStartTime = Date.now();
+      probeItems = urls.map(url => ({
+        url, status: "queued", caption: "", resolutions: [], error: "",
+        platform: detectPlatform(url),
+      }));
       showTable();
 
       if (probeTimer) clearInterval(probeTimer);
@@ -185,16 +192,35 @@
   });
 
   async function pollProbe() {
+    // Client-side safety net: if server never responds in time
+    if (Date.now() - probeStartTime > PROBE_TIMEOUT_MS) {
+      clearInterval(probeTimer);
+      setBusy(false);
+      probeItems.forEach(item => {
+        if (item.status === "queued" || item.status === "probing") {
+          item.status = "error";
+          item.error  = "Quá thời gian chờ. Video có thể cần đăng nhập hoặc bị chặn.";
+        }
+      });
+      renderAllRows();
+      return;
+    }
     try {
       const res  = await fetch(`/api/probe_status/${probeId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      // Preserve client-side platform when server hasn't set it yet
+      data.items.forEach((serverItem, i) => {
+        if (!serverItem.platform && probeItems[i]?.platform) {
+          serverItem.platform = probeItems[i].platform;
+        }
+      });
       probeItems = data.items;
       renderAllRows();
       updateBulkBtn();
       if (data.finished) { clearInterval(probeTimer); setBusy(false); }
     } catch {
-      clearInterval(probeTimer);
-      setBusy(false);
+      // Don't stop polling on transient network hiccups — just skip this tick
     }
   }
 
@@ -418,6 +444,13 @@
   }
 
   // ── Cell renderers ────────────────────────────────────────────────────────
+
+  function detectPlatform(url) {
+    const u = (url || "").toLowerCase();
+    if (u.includes("facebook.com") || u.includes("fb.watch")) return "facebook";
+    if (u.includes("tiktok.com")) return "tiktok";
+    return "other";
+  }
 
   function platformLabel(plat) {
     const map = { facebook: "FB", tiktok: "TikTok", youtube: "YT", instagram: "IG" };
