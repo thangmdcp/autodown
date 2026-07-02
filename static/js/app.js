@@ -161,9 +161,8 @@
     dlSaveAllBtn.disabled = true;
 
     // Start all downloads immediately — no separate probe step
-    const total = urls.length;
     urls.forEach((_, idx) => {
-      startDownloadJob(idx, total)
+      startDownloadJob(idx)
         .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
         .catch(() => {});
     });
@@ -172,10 +171,9 @@
   // ── "Tải & Lưu tất cả" — retry failed ones ────────────────────────────────
 
   dlSaveAllBtn.addEventListener("click", () => {
-    const total = probeItems.length;
     probeItems.forEach((_, idx) => {
       if (rowDl[idx]?.status === "dl_error" || rowDl[idx]?.status === "save_error") {
-        startDownloadJob(idx, total)
+        startDownloadJob(idx)
           .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
           .catch(() => {});
       }
@@ -185,28 +183,21 @@
   // ── Per-row "Tải & Lưu" ───────────────────────────────────────────────────
 
   async function downloadAndSaveRow(idx) {
-    const total = probeItems.length;
-    await startDownloadJob(idx, total);
+    await startDownloadJob(idx);
     if (rowDl[idx]?.status === "dl_done") streamFile(idx);
   }
 
   // ── Core: download job (returns when done or throws) ──────────────────────
 
-  function makeFilename(idx, total) {
-    if (total === 1) return "thangvd.mp4";
-    return `thangvd${idx + 1}.mp4`;
-  }
-
-  function startDownloadJob(idx, total = 1) {
-    const fname = makeFilename(idx, total);
+  function startDownloadJob(idx) {
     rowDl[idx] = { status: "queued", percent: 0, speed: null, eta: null,
-                   dlId: null, filename: fname, error: null };
+                   dlId: null, filename: null, error: null };
     renderRow(idx);
 
     return new Promise((resolve, reject) => {
       (async () => {
         try {
-          const dlId = await _startAndPoll(idx, fname);
+          const dlId = await _startAndPoll(idx);
           resolve(dlId);
         } catch (e) {
           rowDl[idx] = { ...rowDl[idx], status: "dl_error", error: e.message || "Lỗi kết nối." };
@@ -216,15 +207,14 @@
     });
   }
 
-  async function _startAndPoll(idx, filename) {
+  async function _startAndPoll(idx) {
     const item = probeItems[idx] || {};
     const res  = await fetch("/api/start_dl", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        url:      item.url || "",
-        filename: filename,
-        height:   null,
+        url:    item.url || "",
+        height: null,
       }),
     });
     const data = await res.json();
@@ -357,6 +347,7 @@
     `;
 
     tr.querySelector(".btn-dl-save")?.addEventListener("click", () => downloadAndSaveRow(idx));
+    tr.querySelector(".btn-stream-save")?.addEventListener("click", () => streamFile(idx));
 
     updateSummary();
   }
@@ -379,8 +370,7 @@
     const cap  = item.caption?.trim() || (item.status === "done" ? "(không có caption)" : "…");
     const plat = item.platform || "other";
     const badge = `<span class="plat-badge plat-${esc(plat)}">${platformLabel(plat)}</span>`;
-    let html = `${badge}<span class="caption-text" title="${esc(cap)}">${esc(cap)}</span>
-                <span class="caption-url"  title="${esc(item.url)}">${esc(item.url)}</span>`;
+    let html = `${badge}<span class="caption-text" title="${esc(cap)}">${esc(cap)}</span>`;
     if (item.error) html += `<span class="error-text">${esc(item.error.split("\n")[0])}</span>`;
     return html;
   }
@@ -480,8 +470,7 @@
       case "processing":
         return `<button class="row-btn" type="button" disabled>${IC.spin} Đang xử lý…</button>`;
       case "dl_done":
-        // This state appears briefly before streaming starts; shouldn't linger
-        return `<button class="row-btn" type="button" disabled>${IC.spin} Chuẩn bị lưu…</button>`;
+        return `<button class="btn-stream-save row-btn row-btn--primary" type="button">${IC.save} Lưu file</button>`;
       case "saving":
         return `<button class="row-btn" type="button" disabled>${IC.spin} Đang lưu…</button>`;
       case "saved":

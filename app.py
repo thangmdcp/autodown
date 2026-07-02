@@ -232,7 +232,7 @@ def _dl_progress_hook(dl: dict):
     return hook
 
 
-def _download_worker(dl_id: str, url: str, filename: str = "thangvd.mp4", height=None):
+def _download_worker(dl_id: str, url: str, height=None):
     dl = DOWNLOADS[dl_id]
     tmpdir = tempfile.mkdtemp(prefix="fbdl_")
     dl["tmpdir"] = tmpdir
@@ -280,11 +280,13 @@ def _download_worker(dl_id: str, url: str, filename: str = "thangvd.mp4", height
             raise RuntimeError(f"File không tồn tại: {os.path.basename(src)}")
 
         caption = ""
+        video_id = ""
         if info:
-            caption = info.get("description") or info.get("title") or ""
+            caption  = info.get("description") or info.get("title") or ""
+            video_id = info.get("id") or ""
 
         dl["path"]     = src
-        dl["filename"] = filename
+        dl["filename"] = core.sanitize_filename(caption, video_id) + ".mp4"
         dl["caption"]  = caption
         dl["status"]   = "done"
         dl["percent"]  = 100
@@ -297,10 +299,9 @@ def _download_worker(dl_id: str, url: str, filename: str = "thangvd.mp4", height
 
 @app.route("/api/start_dl", methods=["POST"])
 def start_dl():
-    data     = request.get_json(force=True) or {}
-    url      = (data.get("url") or "").strip()
-    height   = data.get("height")
-    filename = (data.get("filename") or "thangvd.mp4").strip() or "thangvd.mp4"
+    data   = request.get_json(force=True) or {}
+    url    = (data.get("url") or "").strip()
+    height = data.get("height")
 
     if not url:
         return jsonify({"error": "Thiếu URL."}), 400
@@ -320,7 +321,7 @@ def start_dl():
     }
     threading.Thread(
         target=_download_worker,
-        args=(dl_id, url, filename, height),
+        args=(dl_id, url, height),
         daemon=True,
     ).start()
     return jsonify({"dl_id": dl_id})
