@@ -14,13 +14,29 @@
   const resultsBody  = document.getElementById("results-body");
   const summaryEl    = document.getElementById("summary");
   const emptyState   = document.getElementById("empty-state");
-  const dlSaveAllBtn = document.getElementById("dl-save-all-btn");
 
   // ── State ─────────────────────────────────────────────────────────────────
 
   let probeItems = [];   // [{url, platform, caption, filename, status}]
   const rowDl = {};      // idx → {dlId, status, percent, speed, eta, filename, caption, error}
   const _retried = {};   // idx → true when auto-retry has been used once
+
+  // ── Sequential save queue (prevents browser blocking simultaneous downloads) ─
+  const _saveQueue = [];
+  let _saving = false;
+
+  async function _drainSaveQueue() {
+    if (_saving || !_saveQueue.length) return;
+    const idx = _saveQueue.shift();
+    if (!rowDl[idx] || rowDl[idx].status !== "dl_done") { _drainSaveQueue(); return; }
+    _saving = true;
+    try { await streamFile(idx); } finally { _saving = false; _drainSaveQueue(); }
+  }
+
+  function enqueueSave(idx) {
+    if (!_saveQueue.includes(idx)) _saveQueue.push(idx);
+    _drainSaveQueue();
+  }
 
   // ── Icons ─────────────────────────────────────────────────────────────────
 
@@ -155,30 +171,18 @@
 
     Object.keys(rowDl).forEach(k => delete rowDl[k]);
     Object.keys(_retried).forEach(k => delete _retried[k]);
+    _saveQueue.length = 0;
+    _saving = false;
     probeItems = urls.map(url => ({
       url, status: "done", caption: "", filename: "", error: "",
       platform: detectPlatform(url),
     }));
     showTable();
-    dlSaveAllBtn.disabled = true;
-
     // Start all downloads immediately — no separate probe step
     urls.forEach((_, idx) => {
       startDownloadJob(idx)
-        .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
+        .then(() => { if (rowDl[idx]?.status === "dl_done") enqueueSave(idx); })
         .catch(() => {});
-    });
-  });
-
-  // ── "Tải & Lưu tất cả" — retry failed ones ────────────────────────────────
-
-  dlSaveAllBtn.addEventListener("click", () => {
-    probeItems.forEach((_, idx) => {
-      if (rowDl[idx]?.status === "dl_error" || rowDl[idx]?.status === "save_error") {
-        startDownloadJob(idx)
-          .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
-          .catch(() => {});
-      }
     });
   });
 
@@ -186,7 +190,7 @@
 
   async function downloadAndSaveRow(idx) {
     await startDownloadJob(idx);
-    if (rowDl[idx]?.status === "dl_done") streamFile(idx);
+    if (rowDl[idx]?.status === "dl_done") enqueueSave(idx);
   }
 
   // ── Core: download job (returns when done or throws) ──────────────────────
@@ -288,12 +292,12 @@
       }
 
       const blobUrl = URL.createObjectURL(blob);
-      Object.assign(document.createElement("a"), {
-        href: blobUrl, download: dl.filename || "thangvd.mp4",
-      });
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = dl.filename || "thangvd.mp4";
+      const baseName = dl.filename || "video.mp4";
+      a.download = probeItems.length > 1
+        ? `${String(idx + 1).padStart(2, "0")}_${baseName}`
+        : baseName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -312,17 +316,6 @@
       dl.error  = e.message;
     }
     renderRow(idx);
-  }
-
-  // ── Bulk button state ─────────────────────────────────────────────────────
-
-  function updateBulkBtn() {
-    const hasError = Object.values(rowDl).some(d =>
-      d.status === "dl_error" || d.status === "save_error"
-    );
-    dlSaveAllBtn.disabled = !hasError;
-    dlSaveAllBtn.textContent = ""; // re-render via innerHTML below
-    dlSaveAllBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> ${hasError ? "Thử lại tất cả" : "Tải Tất Cả"}`;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -451,7 +444,7 @@
       case "queued":      return badge("probing",     IC.spin,  "Chuẩn bị");
       case "downloading": return badge("downloading", IC.spin,  "Đang tải");
       case "processing":  return badge("downloading", IC.spin,  "Đang xử lý");
-      case "dl_done":     return badge("done",        IC.check, "Tải xong");
+      case "dl_done":     return badge("queued",      IC.clock, "Chờ lưu");
       case "saving":      return badge("probing",     IC.spin,  "Đang lưu");
       case "saved":       return badge("done",        IC.check, "Đã lưu ✓");
       case "dl_error":    return badge("error",       IC.x,     "Lỗi tải");
@@ -504,7 +497,6 @@
     const saved  = Object.values(rowDl).filter(d => d.status === "saved").length;
     summaryEl.textContent =
       `Tổng: ${total}  ·  Sẵn sàng: ${ready}  ·  Tải xong: ${dlDone}  ·  Đã lưu: ${saved}`;
-    updateBulkBtn();
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
