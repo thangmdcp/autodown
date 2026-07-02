@@ -298,9 +298,7 @@
   // ── Core: download job (returns when done or throws) ──────────────────────
 
   function startDownloadJob(idx) {
-    const item  = probeItems[idx];
-    const fname = item?.filename || "video.mp4";
-
+    const fname = probeItems[idx]?.filename || "video.mp4";
     rowDl[idx] = { status: "queued", percent: 0, speed: null, eta: null,
                    dlId: null, filename: fname, error: null };
     renderRow(idx);
@@ -308,47 +306,85 @@
     return new Promise((resolve, reject) => {
       (async () => {
         try {
-          const res  = await fetch("/api/start_dl", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ probe_id: probeId, index: idx, height: null }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            rowDl[idx] = { ...rowDl[idx], status: "dl_error", error: data.error || "Lỗi server." };
-            renderRow(idx); reject(new Error(data.error)); return;
-          }
-
-          rowDl[idx].dlId   = data.dl_id;
-          rowDl[idx].status = "downloading";
-          renderRow(idx);
-
-          const timer = setInterval(async () => {
-            try {
-              const r = await fetch(`/api/dl_status/${data.dl_id}`);
-              const d = await r.json();
-              Object.assign(rowDl[idx], d, { dlId: data.dl_id });
-              if (d.status === "done") {
-                rowDl[idx].status = "dl_done";
-                clearInterval(timer);
-                renderRow(idx);
-                resolve(data.dl_id);
-              } else if (d.status === "error") {
-                clearInterval(timer);
-                rowDl[idx].status = "dl_error";
-                renderRow(idx);
-                reject(new Error(d.error || "Download failed"));
-              } else {
-                renderRow(idx);
-              }
-            } catch (e) { clearInterval(timer); reject(e); }
-          }, 700);
+          const dlId = await _startAndPoll(idx, probeId, idx);
+          resolve(dlId);
         } catch (e) {
+          // Probe was lost (server restart/redeploy) — re-probe silently then retry
+          if (e._probeNotFound && probeItems[idx]?.url) {
+            try {
+              const rp = await _reProbeUrl(probeItems[idx].url, idx);
+              probeItems[idx] = rp.item;
+              const dlId = await _startAndPoll(idx, rp.probeId, 0);
+              resolve(dlId);
+            } catch (e2) {
+              rowDl[idx] = { ...rowDl[idx], status: "dl_error", error: e2.message || "Lỗi." };
+              renderRow(idx); reject(e2);
+            }
+            return;
+          }
           rowDl[idx] = { ...rowDl[idx], status: "dl_error", error: e.message || "Lỗi kết nối." };
           renderRow(idx); reject(e);
         }
       })();
     });
+  }
+
+  // Call /api/start_dl then poll until done; throws with ._probeNotFound if 404
+  async function _startAndPoll(idx, pId, pIdx) {
+    const res  = await fetch("/api/start_dl", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ probe_id: pId, index: pIdx, height: null }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const err = new Error(data.error || "Lỗi server.");
+      if (res.status === 404) err._probeNotFound = true;
+      throw err;
+    }
+    const dlId = data.dl_id;
+    rowDl[idx].dlId   = dlId;
+    rowDl[idx].status = "downloading";
+    renderRow(idx);
+    return new Promise((resolve, reject) => {
+      const timer = setInterval(async () => {
+        try {
+          const r = await fetch(`/api/dl_status/${dlId}`);
+          const d = await r.json();
+          Object.assign(rowDl[idx], d, { dlId });
+          if (d.status === "done") {
+            rowDl[idx].status = "dl_done";
+            clearInterval(timer); renderRow(idx); resolve(dlId);
+          } else if (d.status === "error") {
+            clearInterval(timer); rowDl[idx].status = "dl_error";
+            renderRow(idx); reject(new Error(d.error || "Download failed"));
+          } else { renderRow(idx); }
+        } catch (e) { clearInterval(timer); reject(e); }
+      }, 700);
+    });
+  }
+
+  // Re-probe a single URL; shows "queued" spinner while waiting
+  async function _reProbeUrl(url, idx) {
+    rowDl[idx] = { ...rowDl[idx], status: "queued", error: null };
+    renderRow(idx);
+    const fd = new FormData();
+    fd.set("urls", url);
+    const res  = await fetch("/api/probe", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Không lấy được thông tin video.");
+    const newProbeId = data.probe_id;
+    for (let i = 0; i < 90; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      const sr = await fetch(`/api/probe_status/${newProbeId}`);
+      const sd = await sr.json();
+      if (sd.finished) {
+        const item = sd.items?.[0];
+        if (item?.status === "done") return { probeId: newProbeId, item };
+        throw new Error(item?.error || "Không lấy được thông tin video.");
+      }
+    }
+    throw new Error("Quá thời gian chờ lấy thông tin.");
   }
 
   // ── Core: stream file to save target ──────────────────────────────────────
