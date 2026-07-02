@@ -132,6 +132,8 @@ PROBES: dict = {}
 
 # dl_id -> {status, percent, speed, eta, path, filename, tmpdir, error, created}
 DOWNLOADS: dict = {}
+# Max 2 concurrent yt-dlp downloads to stay within Render free-tier RAM (~512 MB)
+_DL_SEM = threading.Semaphore(2)
 
 
 # ── Probe phase ────────────────────────────────────────────────────────────────
@@ -236,23 +238,26 @@ def _download_worker(dl_id: str, url: str, height=None):
     dl = DOWNLOADS[dl_id]
     tmpdir = tempfile.mkdtemp(prefix="fbdl_")
     dl["tmpdir"] = tmpdir
-    dl["status"] = "downloading"
+    # "queued" while waiting for a semaphore slot
+    dl["status"] = "queued"
 
-    outtmpl = os.path.join(tmpdir, "%(id)s.%(ext)s")
-    opts = {
-        "format": core.format_for_height(height),
-        "outtmpl": outtmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
-        "progress_hooks": [_dl_progress_hook(dl)],
-        "concurrent_fragment_downloads": 4,
-        "socket_timeout": 20,
-        "retries": 3,
-        "fragment_retries": 3,
-    }
-
+    _DL_SEM.acquire()
     try:
+        dl["status"] = "downloading"
+        outtmpl = os.path.join(tmpdir, "%(id)s.%(ext)s")
+        opts = {
+            "format": core.format_for_height(height),
+            "outtmpl": outtmpl,
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "progress_hooks": [_dl_progress_hook(dl)],
+            "concurrent_fragment_downloads": 4,
+            "socket_timeout": 20,
+            "retries": 3,
+            "fragment_retries": 3,
+        }
+
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
@@ -295,6 +300,8 @@ def _download_worker(dl_id: str, url: str, height=None):
         dl["error"]  = str(e).splitlines()[0]
         shutil.rmtree(tmpdir, ignore_errors=True)
         dl["tmpdir"] = None
+    finally:
+        _DL_SEM.release()
 
 
 @app.route("/api/start_dl", methods=["POST"])
