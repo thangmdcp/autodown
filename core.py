@@ -22,8 +22,6 @@ URL_PATTERN = re.compile(r'https?://\S+')
 _SUPPORTED_DOMAINS = (
     "facebook.com", "fb.watch",
     "tiktok.com", "vm.tiktok.com",
-    "youtube.com", "youtu.be",
-    "instagram.com", "www.instagram.com",
 )
 
 import shutil as _shutil
@@ -164,10 +162,6 @@ def detect_platform(url: str) -> str:
         return "facebook"
     if "tiktok.com" in u:
         return "tiktok"
-    if "youtube.com" in u or "youtu.be" in u:
-        return "youtube"
-    if "instagram.com" in u:
-        return "instagram"
     return "other"
 
 
@@ -233,7 +227,7 @@ def probe_one(url: str) -> dict:
     if not validate_url(url):
         raise ValueError(
             f"URL không được hỗ trợ: {url!r}\n"
-            "Hỗ trợ: Facebook, TikTok, YouTube, Instagram."
+            "Hỗ trợ: Facebook, TikTok."
         )
 
     probe_opts = {
