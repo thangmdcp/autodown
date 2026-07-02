@@ -153,7 +153,7 @@
     hideErr();
 
     const urls = parseUrls();
-    if (!urls.length) { showErr("Vui lòng nhập ít nhất 1 link Facebook."); return; }
+    if (!urls.length) { showErr("Vui lòng nhập ít nhất 1 link."); return; }
 
     setBusy(true);
     Object.keys(rowDl).forEach(k => delete rowDl[k]);
