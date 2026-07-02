@@ -19,7 +19,6 @@
 
   let probeItems = [];   // [{url, platform, caption, filename, status}]
   const rowDl = {};      // idx → {dlId, status, percent, speed, eta, filename, caption, error}
-  const _retried = {};   // idx → true when auto-retry has been used once
 
   // ── Icons ─────────────────────────────────────────────────────────────────
 
@@ -153,7 +152,6 @@
     if (!urls.length) { showErr("Vui lòng nhập ít nhất 1 link."); return; }
 
     Object.keys(rowDl).forEach(k => delete rowDl[k]);
-    Object.keys(_retried).forEach(k => delete _retried[k]);
     probeItems = urls.map(url => ({
       url, status: "done", caption: "", filename: "", error: "",
       platform: detectPlatform(url),
@@ -288,14 +286,6 @@
       setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       dl.status = "saved";
     } catch (e) {
-      // Server lost the file (restart / 5-min cleanup) — auto re-download once
-      if (!_retried[idx] && e.message && e.message.includes("không tồn tại")) {
-        _retried[idx] = true;
-        dl.status = "queued"; // brief reset so renderRow shows spinner
-        renderRow(idx);
-        downloadAndSaveRow(idx);
-        return;
-      }
       dl.status = "save_error";
       dl.error  = e.message;
     }
