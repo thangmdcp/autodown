@@ -589,6 +589,15 @@ textarea:focus {
 
 .dl-dash { color: var(--text-faint); }
 
+.dl-error-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.dl-error-text {
+  font-size: 11px;
+  color: var(--error);
+  max-width: 180px;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
 /* ── Empty state ──────────────────────────────────────────────────────────── */
 
 .empty-state {

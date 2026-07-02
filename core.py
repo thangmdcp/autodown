@@ -42,15 +42,17 @@ def _label_for_height(h: int) -> str:
 
 
 def format_for_height(height=None) -> str:
-    """Return yt-dlp format string for the given max height (None = best available).
-    Always prefer native H.264 streams to avoid costly re-encoding on cloud servers."""
+    """Return yt-dlp format string for the given max height (None = best available)."""
     cap = f"[height<={height}]" if height else ""
+    if _FFMPEG:
+        return (
+            f"bestvideo{cap}+bestaudio"
+            f"/best{cap}"
+            "/bestvideo+bestaudio/best"
+        )
     return (
         f"bestvideo{cap}[vcodec^=avc1]+bestaudio[acodec^=mp4a]"
-        f"/bestvideo{cap}[vcodec^=avc1]+bestaudio"
         f"/bestvideo{cap}[vcodec^=avc]+bestaudio"
-        f"/bestvideo{cap}[vcodec^=h264]+bestaudio"
-        f"/bestvideo{cap}+bestaudio[acodec^=mp4a]"
         f"/bestvideo{cap}+bestaudio"
         f"/best{cap}/best"
     )

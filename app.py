@@ -251,7 +251,8 @@ def _download_worker(dl_id: str, url: str, filename: str, height=None):
         "noprogress": True,
         "merge_output_format": "mp4",
         "socket_timeout": 60,
-        "extractor_args": {"youtube": {"player_client": ["ios", "android"]}},
+        "retries": 3,
+        "fragment_retries": 3,
     }
 
     try:
