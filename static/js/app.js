@@ -144,9 +144,13 @@
 
   // ── Submit → probe ────────────────────────────────────────────────────────
 
+  let isProcessing = false;
+
   probeForm.addEventListener("submit", e => {
     e.preventDefault();
     hideErr();
+
+    if (isProcessing) return; // ignore re-submit while a batch is running
 
     const urls = parseUrls();
     if (!urls.length) { showErr("Vui lòng nhập ít nhất 1 link."); return; }
@@ -163,6 +167,8 @@
                      dlId: null, filename: null, error: null };
     });
     showTable();
+    isProcessing = true;
+    setBusy(true);
     // Process links one by one: download → save → next (auto-retry once on save_error)
     (async () => {
       for (let idx = 0; idx < urls.length; idx++) {
@@ -176,6 +182,8 @@
           // save_error (e.g. server restart) → retry once
         }
       }
+      isProcessing = false;
+      setBusy(false);
     })();
   });
 
