@@ -188,9 +188,21 @@ def _probe_worker(probe_id: str):
     probe["finished"] = True
 
 
+def _asset_version(rel_path: str) -> int:
+    full = os.path.join(BASE_DIR, "static", rel_path)
+    try:
+        return int(os.path.getmtime(full))
+    except OSError:
+        return 0
+
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        js_v=_asset_version("js/app.js"),
+        css_v=_asset_version("css/style.css"),
+    )
 
 
 @app.route("/api/probe", methods=["POST"])

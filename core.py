@@ -21,6 +21,7 @@ URL_PATTERN = re.compile(r'https?://\S+')
 _SUPPORTED_DOMAINS = (
     "facebook.com", "fb.watch",
     "tiktok.com", "vm.tiktok.com",
+    "youtube.com", "youtu.be",
 )
 
 def _label_for_height(h: int) -> str:
@@ -93,6 +94,8 @@ def detect_platform(url: str) -> str:
         return "facebook"
     if "tiktok.com" in u:
         return "tiktok"
+    if "youtube.com" in u or "youtu.be" in u:
+        return "youtube"
     return "other"
 
 

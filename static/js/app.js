@@ -175,7 +175,11 @@
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             await startDownloadJob(idx);
-            if (rowDl[idx]?.status === "dl_done") await streamFile(idx);
+            // Guard against streamFile no-op'ing (e.g. a stray manual click raced it) —
+            // keep calling until it actually leaves "dl_done", so a row can never get stuck.
+            for (let saveTry = 0; saveTry < 3 && rowDl[idx]?.status === "dl_done"; saveTry++) {
+              await streamFile(idx);
+            }
           } catch (e) {}
           if (rowDl[idx]?.status === "saved") break;    // success → next link
           if (rowDl[idx]?.status !== "save_error") break; // dl_error → show to user, don't retry
