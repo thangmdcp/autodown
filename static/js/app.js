@@ -156,6 +156,12 @@
       url, status: "done", caption: "", filename: "", error: "",
       platform: detectPlatform(url),
     }));
+    // Pre-fill all rows as queued so every row shows a disabled button immediately —
+    // prevents user from clicking "Tải & Lưu" on pending rows and racing the serial loop.
+    urls.forEach((_, idx) => {
+      rowDl[idx] = { status: "queued", percent: 0, speed: null, eta: null,
+                     dlId: null, filename: null, error: null };
+    });
     showTable();
     // Process links one by one: download → save → next
     (async () => {
