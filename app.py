@@ -296,7 +296,7 @@ def _download_worker(dl_id: str, url: str, height=None):
             base = "video"
 
         dl["path"]     = src          # original path on disk — always valid
-        dl["filename"] = base + ".mp4"  # browser download name only
+        dl["filename"] = "thangvd.mp4"  # fixed browser download name
         dl["caption"]  = caption
         dl["status"]   = "done"
         dl["percent"]  = 100
