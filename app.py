@@ -9,7 +9,6 @@ import json
 import os
 import secrets
 import shutil
-import subprocess
 import tempfile
 import threading
 import time
@@ -233,18 +232,15 @@ def _dl_progress_hook(dl: dict):
     return hook
 
 
-def _download_worker(dl_id: str, url: str, height=None):
+def _download_worker(dl_id: str, url: str, filename: str = "thangvd.mp4", height=None):
     dl = DOWNLOADS[dl_id]
     tmpdir = tempfile.mkdtemp(prefix="fbdl_")
     dl["tmpdir"] = tmpdir
     dl["status"] = "downloading"
 
-    # Use video ID as temp name; rename to caption-based name after download
     outtmpl = os.path.join(tmpdir, "%(id)s.%(ext)s")
-
     opts = {
         "format": core.format_for_height(height),
-        "merge_output_format": "mp4",
         "outtmpl": outtmpl,
         "quiet": True,
         "no_warnings": True,
@@ -259,7 +255,7 @@ def _download_worker(dl_id: str, url: str, height=None):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
-        # yt-dlp tells us exactly where the final file is
+        # Get filepath from yt-dlp info (most reliable)
         src = None
         if info:
             for rdl in (info.get("requested_downloads") or []):
@@ -268,45 +264,26 @@ def _download_worker(dl_id: str, url: str, height=None):
                     src = fp
                     break
 
-        # Fallback: pick largest file in tmpdir (merged > individual streams)
+        # Fallback: largest file in tmpdir
         if not src:
-            video_exts = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v", ".3gp", ".flv"}
             candidates = sorted(
-                [f for f in os.listdir(tmpdir)
-                 if not f.endswith(".part")
-                 and os.path.splitext(f)[1].lower() in video_exts],
+                [f for f in os.listdir(tmpdir) if not f.endswith(".part")],
                 key=lambda f: os.path.getsize(os.path.join(tmpdir, f)),
                 reverse=True,
             )
-            if not candidates:
-                candidates = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
             if not candidates:
                 raise RuntimeError("Tải xong nhưng không tìm thấy file.")
             src = os.path.join(tmpdir, candidates[0])
 
         if not os.path.exists(src):
-            raise RuntimeError(f"File không tồn tại: {src}")
+            raise RuntimeError(f"File không tồn tại: {os.path.basename(src)}")
 
-        # Re-mux to H.264 + AAC mp4 so QuickTime / Windows Media Player can play it.
-        # -c:v copy  → video stream is copied as-is (no re-encoding, fast)
-        # -c:a aac   → audio is converted to AAC (fast; handles Opus/MP3/etc.)
-        final_mp4 = os.path.join(tmpdir, "out.mp4")
-        try:
-            subprocess.run(
-                ["ffmpeg", "-i", src, "-c:v", "copy", "-c:a", "aac", "-y", final_mp4],
-                check=True, capture_output=True, timeout=300,
-            )
-            src = final_mp4
-        except Exception:
-            pass  # ffmpeg unavailable or failed — serve whatever yt-dlp produced
-
-        # Extract caption for display in the UI
         caption = ""
         if info:
             caption = info.get("description") or info.get("title") or ""
 
         dl["path"]     = src
-        dl["filename"] = "thangvd.mp4"
+        dl["filename"] = filename
         dl["caption"]  = caption
         dl["status"]   = "done"
         dl["percent"]  = 100
@@ -319,9 +296,10 @@ def _download_worker(dl_id: str, url: str, height=None):
 
 @app.route("/api/start_dl", methods=["POST"])
 def start_dl():
-    data   = request.get_json(force=True) or {}
-    url    = (data.get("url") or "").strip()
-    height = data.get("height")
+    data     = request.get_json(force=True) or {}
+    url      = (data.get("url") or "").strip()
+    height   = data.get("height")
+    filename = (data.get("filename") or "thangvd.mp4").strip() or "thangvd.mp4"
 
     if not url:
         return jsonify({"error": "Thiếu URL."}), 400
@@ -341,7 +319,7 @@ def start_dl():
     }
     threading.Thread(
         target=_download_worker,
-        args=(dl_id, url, height),
+        args=(dl_id, url, filename, height),
         daemon=True,
     ).start()
     return jsonify({"dl_id": dl_id})

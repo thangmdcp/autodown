@@ -161,8 +161,9 @@
     dlSaveAllBtn.disabled = true;
 
     // Start all downloads immediately — no separate probe step
+    const total = urls.length;
     urls.forEach((_, idx) => {
-      startDownloadJob(idx)
+      startDownloadJob(idx, total)
         .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
         .catch(() => {});
     });
@@ -171,9 +172,10 @@
   // ── "Tải & Lưu tất cả" — retry failed ones ────────────────────────────────
 
   dlSaveAllBtn.addEventListener("click", () => {
+    const total = probeItems.length;
     probeItems.forEach((_, idx) => {
       if (rowDl[idx]?.status === "dl_error" || rowDl[idx]?.status === "save_error") {
-        startDownloadJob(idx)
+        startDownloadJob(idx, total)
           .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
           .catch(() => {});
       }
@@ -183,15 +185,20 @@
   // ── Per-row "Tải & Lưu" ───────────────────────────────────────────────────
 
   async function downloadAndSaveRow(idx) {
-    await startDownloadJob(idx);
+    const total = probeItems.length;
+    await startDownloadJob(idx, total);
     if (rowDl[idx]?.status === "dl_done") streamFile(idx);
   }
 
   // ── Core: download job (returns when done or throws) ──────────────────────
 
-  function startDownloadJob(idx) {
-    const item  = probeItems[idx] || {};
-    const fname = item.filename || "video.mp4";
+  function makeFilename(idx, total) {
+    if (total === 1) return "thangvd.mp4";
+    return `thangvd${idx + 1}.mp4`;
+  }
+
+  function startDownloadJob(idx, total = 1) {
+    const fname = makeFilename(idx, total);
     rowDl[idx] = { status: "queued", percent: 0, speed: null, eta: null,
                    dlId: null, filename: fname, error: null };
     renderRow(idx);
@@ -199,7 +206,7 @@
     return new Promise((resolve, reject) => {
       (async () => {
         try {
-          const dlId = await _startAndPoll(idx);
+          const dlId = await _startAndPoll(idx, fname);
           resolve(dlId);
         } catch (e) {
           rowDl[idx] = { ...rowDl[idx], status: "dl_error", error: e.message || "Lỗi kết nối." };
@@ -209,15 +216,14 @@
     });
   }
 
-  // POST url+filename directly — no probe lookup on server needed
-  async function _startAndPoll(idx) {
+  async function _startAndPoll(idx, filename) {
     const item = probeItems[idx] || {};
     const res  = await fetch("/api/start_dl", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        url:      item.url      || "",
-        filename: item.filename || "video.mp4",
+        url:      item.url || "",
+        filename: filename,
         height:   null,
       }),
     });
@@ -249,13 +255,15 @@
     });
   }
 
-  // ── Core: fetch file from server → blob → browser download ──────────────
+  // ── Core: fetch file from server → stream into blob → browser save ──────
 
   async function streamFile(idx) {
     const dl = rowDl[idx];
     if (!dl || dl.status !== "dl_done") return;
 
-    dl.status = "saving";
+    dl.status    = "saving";
+    dl.saveBytes = 0;
+    dl.saveTotal = 0;
     renderRow(idx);
 
     try {
@@ -265,11 +273,35 @@
         try { const d = await res.json(); if (d.error) msg = d.error; } catch {}
         throw new Error(msg);
       }
-      const blob = await res.blob();
+
+      const contentLength = +(res.headers.get("content-length") || 0);
+      dl.saveTotal = contentLength;
+
+      let blob;
+      if (contentLength > 0 && res.body) {
+        const reader = res.body.getReader();
+        const chunks = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          dl.saveBytes = received;
+          renderRow(idx);
+        }
+        blob = new Blob(chunks, { type: "video/mp4" });
+      } else {
+        blob = await res.blob();
+      }
+
       const blobUrl = URL.createObjectURL(blob);
-      const a = Object.assign(document.createElement("a"), {
-        href: blobUrl, download: dl.filename || "video.mp4",
+      Object.assign(document.createElement("a"), {
+        href: blobUrl, download: dl.filename || "thangvd.mp4",
       });
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = dl.filename || "thangvd.mp4";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -356,25 +388,32 @@
   function progressCell(dl) {
     if (!dl || dl.status === "queued") return `<span class="prog-dash">—</span>`;
 
-    const pct         = typeof dl.percent === "number" ? Math.max(0, Math.min(100, dl.percent)) : null;
-    const isDownload  = dl.status === "downloading";
-    const isProcess   = dl.status === "processing";
-    const isSaving    = dl.status === "saving";
-    const isDone      = ["dl_done", "saving", "saved"].includes(dl.status);
-    const indet       = (isDownload && pct === null) || isProcess || isSaving;
-    const fillCls     = indet ? "progress-fill is-indeterminate" : "progress-fill";
-    const fillPct     = indet ? 0 : (pct ?? (isDone ? 100 : 0));
-    const isSuccess   = dl.status === "saved";
+    const pct        = typeof dl.percent === "number" ? Math.max(0, Math.min(100, dl.percent)) : null;
+    const isDownload = dl.status === "downloading";
+    const isSaving   = dl.status === "saving";
+    const isSuccess  = dl.status === "saved";
+    const isDone     = ["dl_done", "saving", "saved"].includes(dl.status);
 
-    // Right-side label
+    // Save progress: 0→100% based on bytes received
+    const savePct = (isSaving && dl.saveTotal > 0)
+      ? Math.round(dl.saveBytes / dl.saveTotal * 100)
+      : null;
+
+    const indet   = (isDownload && pct === null) || (isSaving && savePct === null);
+    const fillPct = indet ? 0
+      : isSaving ? (savePct ?? 100)
+      : (pct ?? (isDone ? 100 : 0));
+
     let label = "";
-    if (isProcess)     label = `<span class="prog-label">H.264</span>`;
-    else if (isSaving) label = `<span class="prog-label">Lưu…</span>`;
+    if (isSaving && savePct !== null)
+      label = `<span class="prog-label prog-pct">Lưu ${savePct}%</span>`;
+    else if (isSaving)
+      label = `<span class="prog-label">Lưu…</span>`;
     else if (isDownload && pct != null)
-                       label = `<span class="prog-label prog-pct">${pct.toFixed(0)}%</span>`;
-    else if (isDone)   label = `<span class="prog-label prog-pct${isSuccess ? " prog-ok" : ""}">100%</span>`;
+      label = `<span class="prog-label prog-pct">${pct.toFixed(0)}%</span>`;
+    else if (isDone)
+      label = `<span class="prog-label prog-pct${isSuccess ? " prog-ok" : ""}">100%</span>`;
 
-    // Sub-line: speed + ETA (only while downloading)
     let sub = "";
     if (isDownload) {
       const parts = [];
@@ -391,7 +430,7 @@
     return `<div class="prog-wrap">
       <div class="prog-bar-row">
         <div class="progress-track${isSuccess ? " is-success" : ""}">
-          <div class="${fillCls}" style="width:${fillPct}%"></div>
+          <div class="${indet ? "progress-fill is-indeterminate" : "progress-fill"}" style="width:${fillPct}%"></div>
         </div>
         ${label}
       </div>
