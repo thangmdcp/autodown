@@ -1,0 +1,55 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f0c29"/>
+      <stop offset="50%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="135deg" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Decorative glow circles -->
+  <circle cx="1050" cy="100" r="320" fill="rgba(99,102,241,0.08)"/>
+  <circle cx="150" cy="530" r="240" fill="rgba(124,58,237,0.07)"/>
+  <circle cx="600" cy="315" r="500" fill="rgba(99,102,241,0.03)"/>
+
+  <!-- Logo icon box -->
+  <rect x="80" y="180" width="108" height="108" rx="26" fill="url(#accent)"/>
+  <!-- Logo: play+download icon (scaled from 24x24 viewBox to 108x108) -->
+  <g transform="translate(80,180) scale(4.5)">
+    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="white" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+    <path d="M12 2.5v8" stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M7.2 10.5l4.8 5.5 4.8-5.5z" fill="white"/>
+  </g>
+
+  <!-- App name -->
+  <text x="218" y="258" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="76" font-weight="800" fill="white" letter-spacing="-2">AutoDown</text>
+
+  <!-- Tagline -->
+  <text x="222" y="310" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" fill="rgba(199,210,254,0.85)" letter-spacing="0.2">Tải video từ Facebook, TikTok, YouTube, Instagram</text>
+
+  <!-- Divider -->
+  <line x1="80" y1="358" x2="560" y2="358" stroke="rgba(99,102,241,0.4)" stroke-width="1"/>
+
+  <!-- Platform badges -->
+  <rect x="80" y="378" width="136" height="46" rx="10" fill="rgba(24,119,242,0.18)"/>
+  <text x="148" y="407" font-family="-apple-system, sans-serif" font-size="21" font-weight="700" fill="#93c5fd" text-anchor="middle">Facebook</text>
+
+  <rect x="228" y="378" width="112" height="46" rx="10" fill="rgba(255,255,255,0.08)"/>
+  <text x="284" y="407" font-family="-apple-system, sans-serif" font-size="21" font-weight="700" fill="white" text-anchor="middle">TikTok</text>
+
+  <rect x="352" y="378" width="124" height="46" rx="10" fill="rgba(255,0,0,0.15)"/>
+  <text x="414" y="407" font-family="-apple-system, sans-serif" font-size="21" font-weight="700" fill="#fca5a5" text-anchor="middle">YouTube</text>
+
+  <rect x="488" y="378" width="134" height="46" rx="10" fill="rgba(193,53,132,0.18)"/>
+  <text x="555" y="407" font-family="-apple-system, sans-serif" font-size="21" font-weight="700" fill="#f0abfc" text-anchor="middle">Instagram</text>
+
+  <!-- URL -->
+  <text x="80" y="560" font-family="'SF Mono', 'Fira Code', monospace" font-size="24" fill="rgba(165,180,252,0.55)" letter-spacing="0.5">autodown.vibevic.com</text>
+</svg>
