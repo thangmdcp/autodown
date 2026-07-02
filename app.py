@@ -267,24 +267,26 @@ def _download_worker(dl_id: str, url: str, height=None):
                     src = fp
                     break
 
-        # Fallback: scan tmpdir for video files
+        # Fallback: pick largest file in tmpdir (merged > individual streams)
         if not src:
             video_exts = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v", ".3gp", ".flv"}
-            files = sorted(
+            candidates = sorted(
                 [f for f in os.listdir(tmpdir)
                  if not f.endswith(".part")
                  and os.path.splitext(f)[1].lower() in video_exts],
                 key=lambda f: os.path.getsize(os.path.join(tmpdir, f)),
-                reverse=True,  # pick largest file = merged video
+                reverse=True,
             )
-            if not files:
-                files = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
-            if not files:
+            if not candidates:
+                candidates = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
+            if not candidates:
                 raise RuntimeError("Tải xong nhưng không tìm thấy file.")
-            src = os.path.join(tmpdir, files[0])
+            src = os.path.join(tmpdir, candidates[0])
 
-        ext = ".mp4"
+        if not os.path.exists(src):
+            raise RuntimeError(f"File không tồn tại: {src}")
 
+        # Build a clean download name (Vietnamese) — never rename the file itself
         caption = ""
         if info:
             video_id = info.get("id") or "unknown"
@@ -293,17 +295,8 @@ def _download_worker(dl_id: str, url: str, height=None):
         else:
             base = "video"
 
-        clean_name = base + ext
-        clean_path = os.path.join(tmpdir, clean_name)
-        if src != clean_path:
-            try:
-                os.rename(src, clean_path)
-                src = clean_path
-            except OSError:
-                clean_name = os.path.basename(src)
-
-        dl["path"]     = src
-        dl["filename"] = clean_name
+        dl["path"]     = src          # original path on disk — always valid
+        dl["filename"] = base + ".mp4"  # browser download name only
         dl["caption"]  = caption
         dl["status"]   = "done"
         dl["percent"]  = 100
@@ -355,11 +348,15 @@ def dl_status(dl_id: str):
 @app.route("/api/dl_file/<dl_id>")
 def dl_file(dl_id: str):
     dl = DOWNLOADS.get(dl_id)
-    if not dl or dl["status"] != "done":
-        abort(404)
+    if not dl:
+        return jsonify({"error": "Download không tồn tại (server restart?). Tải lại trang và thử lại."}), 404
+    if dl["status"] != "done":
+        return jsonify({"error": f"Trạng thái không hợp lệ: {dl['status']}"}), 404
     path = dl.get("path")
-    if not path or not os.path.exists(path):
-        abort(404)
+    if not path:
+        return jsonify({"error": "Đường dẫn file trống."}), 404
+    if not os.path.exists(path):
+        return jsonify({"error": f"File bị mất trên server: {os.path.basename(path)}"}), 404
 
     tmpdir = dl.get("tmpdir")
 

@@ -260,7 +260,11 @@
 
     try {
       const res = await fetch(`/api/dl_file/${dl.dlId}`);
-      if (!res.ok) throw new Error(`Server lỗi ${res.status} — thử lại sau.`);
+      if (!res.ok) {
+        let msg = `Server lỗi ${res.status}`;
+        try { const d = await res.json(); if (d.error) msg = d.error; } catch {}
+        throw new Error(msg);
+      }
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = Object.assign(document.createElement("a"), {
