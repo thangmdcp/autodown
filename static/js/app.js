@@ -447,8 +447,10 @@
         const errMsg = dl.error ? `<div class="dl-error-text">${esc(dl.error.split("\n")[0])}</div>` : "";
         return `<div class="dl-error-wrap"><button class="btn-dl-save row-btn row-btn--primary" type="button">${IC.dl} Thử lại</button>${errMsg}</div>`;
       }
-      case "save_error":
-        return `<button class="btn-dl-save row-btn row-btn--primary" type="button">${IC.save} Thử lại lưu</button>`;
+      case "save_error": {
+        const saveErr = dl.error ? `<div class="dl-error-text">${esc(dl.error.split("\n")[0])}</div>` : "";
+        return `<div class="dl-error-wrap"><button class="btn-dl-save row-btn row-btn--primary" type="button">${IC.save} Thử lại lưu</button>${saveErr}</div>`;
+      }
     }
     return `<span class="dl-dash">—</span>`;
   }

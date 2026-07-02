@@ -258,16 +258,31 @@ def _download_worker(dl_id: str, url: str, height=None):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
-        video_exts = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v", ".3gp", ".flv"}
-        files = [f for f in os.listdir(tmpdir)
-                 if not f.endswith(".part")
-                 and os.path.splitext(f)[1].lower() in video_exts]
-        if not files:
-            files = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
-        if not files:
-            raise RuntimeError("Tải xong nhưng không tìm thấy file.")
+        # yt-dlp tells us exactly where the final file is
+        src = None
+        if info:
+            for rdl in (info.get("requested_downloads") or []):
+                fp = rdl.get("filepath") or rdl.get("filename")
+                if fp and os.path.exists(fp):
+                    src = fp
+                    break
 
-        src = os.path.join(tmpdir, files[0])
+        # Fallback: scan tmpdir for video files
+        if not src:
+            video_exts = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v", ".3gp", ".flv"}
+            files = sorted(
+                [f for f in os.listdir(tmpdir)
+                 if not f.endswith(".part")
+                 and os.path.splitext(f)[1].lower() in video_exts],
+                key=lambda f: os.path.getsize(os.path.join(tmpdir, f)),
+                reverse=True,  # pick largest file = merged video
+            )
+            if not files:
+                files = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
+            if not files:
+                raise RuntimeError("Tải xong nhưng không tìm thấy file.")
+            src = os.path.join(tmpdir, files[0])
+
         ext = ".mp4"
 
         caption = ""
@@ -285,7 +300,7 @@ def _download_worker(dl_id: str, url: str, height=None):
                 os.rename(src, clean_path)
                 src = clean_path
             except OSError:
-                clean_name = files[0]
+                clean_name = os.path.basename(src)
 
         dl["path"]     = src
         dl["filename"] = clean_name
