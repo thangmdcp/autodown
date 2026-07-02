@@ -21,23 +21,6 @@
   const rowDl = {};      // idx → {dlId, status, percent, speed, eta, filename, caption, error}
   const _retried = {};   // idx → true when auto-retry has been used once
 
-  // ── Sequential save queue (prevents browser blocking simultaneous downloads) ─
-  const _saveQueue = [];
-  let _saving = false;
-
-  async function _drainSaveQueue() {
-    if (_saving || !_saveQueue.length) return;
-    const idx = _saveQueue.shift();
-    if (!rowDl[idx] || rowDl[idx].status !== "dl_done") { _drainSaveQueue(); return; }
-    _saving = true;
-    try { await streamFile(idx); } finally { _saving = false; _drainSaveQueue(); }
-  }
-
-  function enqueueSave(idx) {
-    if (!_saveQueue.includes(idx)) _saveQueue.push(idx);
-    _drainSaveQueue();
-  }
-
   // ── Icons ─────────────────────────────────────────────────────────────────
 
   const IC = {
@@ -171,8 +154,6 @@
 
     Object.keys(rowDl).forEach(k => delete rowDl[k]);
     Object.keys(_retried).forEach(k => delete _retried[k]);
-    _saveQueue.length = 0;
-    _saving = false;
     probeItems = urls.map(url => ({
       url, status: "done", caption: "", filename: "", error: "",
       platform: detectPlatform(url),
@@ -181,7 +162,7 @@
     // Start all downloads immediately — no separate probe step
     urls.forEach((_, idx) => {
       startDownloadJob(idx)
-        .then(() => { if (rowDl[idx]?.status === "dl_done") enqueueSave(idx); })
+        .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
         .catch(() => {});
     });
   });
@@ -190,7 +171,7 @@
 
   async function downloadAndSaveRow(idx) {
     await startDownloadJob(idx);
-    if (rowDl[idx]?.status === "dl_done") enqueueSave(idx);
+    if (rowDl[idx]?.status === "dl_done") streamFile(idx);
   }
 
   // ── Core: download job (returns when done or throws) ──────────────────────
@@ -298,6 +279,8 @@
       a.download = probeItems.length > 1
         ? `${String(idx + 1).padStart(2, "0")}_${baseName}`
         : baseName;
+      // Stagger browser save dialogs 350ms apart so browser never blocks them
+      if (probeItems.length > 1) await new Promise(r => setTimeout(r, idx * 350));
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -444,7 +427,7 @@
       case "queued":      return badge("probing",     IC.spin,  "Chuẩn bị");
       case "downloading": return badge("downloading", IC.spin,  "Đang tải");
       case "processing":  return badge("downloading", IC.spin,  "Đang xử lý");
-      case "dl_done":     return badge("queued",      IC.clock, "Chờ lưu");
+      case "dl_done":     return badge("downloading", IC.spin,  "Đang lưu");
       case "saving":      return badge("probing",     IC.spin,  "Đang lưu");
       case "saved":       return badge("done",        IC.check, "Đã lưu ✓");
       case "dl_error":    return badge("error",       IC.x,     "Lỗi tải");
