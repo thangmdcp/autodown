@@ -236,7 +236,13 @@ def probe_one(url: str) -> dict:
             "Hỗ trợ: Facebook, TikTok, YouTube, Instagram."
         )
 
-    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    probe_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "socket_timeout": 30,
+        "extractor_retries": 1,
+    }
 
     try:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
