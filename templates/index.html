@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoDown</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div>
+          <h1>AutoDown</h1>
+          <p class="subtitle">Tải video / reel Facebook &amp; đặt tên file theo caption</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="api-key-wrap" id="api-key-wrap">
+          <span class="api-key-label">API KEY</span>
+          <code class="api-key-val" id="api-key-val">…</code>
+          <!-- toggle visibility -->
+          <button class="api-key-btn" id="api-key-toggle" type="button" aria-label="Hiện/ẩn key">
+            <svg id="icon-eye" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>
+            <svg id="icon-eye-off" width="13" height="13" viewBox="0 0 24 24" fill="none" class="is-hidden"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <!-- copy -->
+          <button class="api-key-btn" id="api-key-copy" type="button" aria-label="Copy API key">
+            <svg id="icon-copy" width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <svg id="icon-check" width="13" height="13" viewBox="0 0 24 24" fill="none" class="is-hidden"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <!-- new key -->
+          <button class="api-key-btn api-key-btn--new" id="api-key-new" type="button" aria-label="Tạo key mới">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Key name dialog -->
+        <dialog id="key-dialog">
+          <form id="key-dialog-form" method="dialog">
+            <p class="key-dialog-title">Tạo key mới</p>
+            <input type="text" id="key-dialog-name" maxlength="60" placeholder="Tên key…" autocomplete="off">
+            <div class="key-dialog-actions">
+              <button type="button" id="key-dialog-cancel">Huỷ</button>
+              <button type="submit" id="key-dialog-confirm">Tạo</button>
+            </div>
+          </form>
+        </dialog>
+        <span class="badge-local">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+          </svg>
+          localhost
+        </span>
+      </div>
+    </header>
+
+    <main class="card">
+      <form id="probe-form">
+        <div class="field">
+          <label for="url-input">
+            Link video
+            <span class="label-count" id="url-count"></span>
+          </label>
+          <textarea
+            id="url-input"
+            rows="4"
+            autocomplete="off"
+            spellcheck="false"
+          ></textarea>
+          <p class="hint">1 link = tải 1 video &nbsp;·&nbsp; Nhiều dòng = tải nhiều video</p>
+        </div>
+
+        <button type="submit" id="probe-btn" class="btn-primary">
+          <svg class="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span id="probe-label">Tải Xuống</span>
+          <span class="spinner is-hidden" id="probe-spinner" aria-hidden="true"></span>
+        </button>
+
+        <p class="form-error is-hidden" id="form-error" role="alert"></p>
+      </form>
+    </main>
+
+    <section class="card results-card is-hidden" id="results-card" aria-live="polite">
+      <div class="results-header">
+        <div>
+          <h2>Kết quả</h2>
+          <div class="summary" id="summary"></div>
+        </div>
+        <button id="dl-save-all-btn" class="row-btn row-btn--primary" type="button" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Tải Tất Cả
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th scope="col" class="col-idx">#</th>
+              <th scope="col">Caption</th>
+              <th scope="col" class="col-progress">Tiến trình</th>
+              <th scope="col" class="col-status">Trạng thái</th>
+              <th scope="col" class="col-action">Hành động</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card empty-state" id="empty-state">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M8 20h8M9 9l3 3 3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <p>Dán link Facebook, TikTok, YouTube hoặc Instagram rồi bấm <strong>Tải Xuống</strong></p>
+    </section>
+
+    <footer class="footnote">Chỉ dùng cho video công khai hoặc video của bạn.</footer>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+downloads/
+.api_config.json
+.api_key
+*.part
+.DS_Store
