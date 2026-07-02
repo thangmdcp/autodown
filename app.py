@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -286,17 +287,26 @@ def _download_worker(dl_id: str, url: str, height=None):
         if not os.path.exists(src):
             raise RuntimeError(f"File không tồn tại: {src}")
 
-        # Build a clean download name (Vietnamese) — never rename the file itself
+        # Re-mux to H.264 + AAC mp4 so QuickTime / Windows Media Player can play it.
+        # -c:v copy  → video stream is copied as-is (no re-encoding, fast)
+        # -c:a aac   → audio is converted to AAC (fast; handles Opus/MP3/etc.)
+        final_mp4 = os.path.join(tmpdir, "out.mp4")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-i", src, "-c:v", "copy", "-c:a", "aac", "-y", final_mp4],
+                check=True, capture_output=True, timeout=300,
+            )
+            src = final_mp4
+        except Exception:
+            pass  # ffmpeg unavailable or failed — serve whatever yt-dlp produced
+
+        # Extract caption for display in the UI
         caption = ""
         if info:
-            video_id = info.get("id") or "unknown"
-            caption  = info.get("description") or info.get("title") or ""
-            base     = core.sanitize_filename(caption, video_id)
-        else:
-            base = "video"
+            caption = info.get("description") or info.get("title") or ""
 
-        dl["path"]     = src          # original path on disk — always valid
-        dl["filename"] = "thangvd.mp4"  # fixed browser download name
+        dl["path"]     = src
+        dl["filename"] = "thangvd.mp4"
         dl["caption"]  = caption
         dl["status"]   = "done"
         dl["percent"]  = 100
