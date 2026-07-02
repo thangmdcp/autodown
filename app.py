@@ -275,45 +275,32 @@ def _download_worker(dl_id: str, url: str, filename: str, height=None):
 
 @app.route("/api/start_dl", methods=["POST"])
 def start_dl():
-    data = request.get_json(force=True) or {}
-    probe_id = data.get("probe_id", "")
-    index = data.get("index")
+    data     = request.get_json(force=True) or {}
+    url      = (data.get("url") or "").strip()
+    filename = (data.get("filename") or "video.mp4").strip()
+    height   = data.get("height")
 
-    probe = PROBES.get(probe_id)
-    if not probe or index is None:
-        return jsonify({"error": "Không tìm thấy probe."}), 404
-
-    items = probe["items"]
-    if not isinstance(index, int) or index < 0 or index >= len(items):
-        return jsonify({"error": "Index không hợp lệ."}), 400
-
-    item = items[index]
-    if item["status"] != "done":
-        return jsonify({"error": "Chưa lấy được thông tin video này."}), 400
-
-    height = data.get("height")
+    if not url:
+        return jsonify({"error": "Thiếu URL."}), 400
+    if not core.validate_url(url):
+        return jsonify({"error": "URL không hợp lệ."}), 400
     if height is not None:
-        height = int(height)
+        try:
+            height = int(height)
+        except (ValueError, TypeError):
+            height = None
 
     dl_id = uuid.uuid4().hex[:12]
     DOWNLOADS[dl_id] = {
-        "status": "queued",
-        "percent": 0,
-        "speed": None,
-        "eta": None,
-        "path": None,
-        "filename": item["filename"],
-        "tmpdir": None,
-        "error": None,
+        "status": "queued", "percent": 0, "speed": None, "eta": None,
+        "path": None, "filename": filename, "tmpdir": None, "error": None,
         "created": time.time(),
     }
-
     threading.Thread(
         target=_download_worker,
-        args=(dl_id, item["url"], item["filename"], height),
+        args=(dl_id, url, filename, height),
         daemon=True,
     ).start()
-
     return jsonify({"dl_id": dl_id})
 
 

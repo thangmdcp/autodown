@@ -170,9 +170,8 @@ def probe_one(url: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
-        "socket_timeout": 30,
-        "extractor_retries": 1,
-        "extractor_args": {"youtube": {"player_client": ["ios", "android"]}},
+        "socket_timeout": 15,
+        "extractor_retries": 0,
     }
 
     try:
