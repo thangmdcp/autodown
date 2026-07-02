@@ -232,66 +232,22 @@
     const pending = probeItems
       .map((item, idx) => ({ item, idx }))
       .filter(({ item, idx }) => item.status === "done" && !rowDl[idx]);
-
-
     if (!pending.length) return;
-
     dlSaveAllBtn.disabled = true;
-
-    // Pick save location FIRST (must be in user-gesture context)
-    let saveTarget = null;
-    try {
-      if (pending.length === 1 && typeof window.showSaveFilePicker === "function") {
-        const fname = pending[0].item.filename || "video.mp4";
-        saveTarget = await window.showSaveFilePicker({
-          suggestedName: fname,
-          types: [{ description: "Video MP4", accept: { "video/mp4": [".mp4"] } }],
-        });
-      } else if (typeof window.showDirectoryPicker === "function") {
-        saveTarget = await window.showDirectoryPicker({ mode: "readwrite" });
-      }
-    } catch (e) {
-      if (e.name === "AbortError") { updateBulkBtn(); return; }
-      saveTarget = null; // fallback to browser download
-    }
-
-    // Run all downloads in parallel, stream each as it finishes
     await Promise.all(pending.map(({ idx }) =>
       startDownloadJob(idx).then(() => {
-        if (rowDl[idx] && rowDl[idx].status === "dl_done") {
-          return streamFile(idx, saveTarget);
-        }
+        if (rowDl[idx]?.status === "dl_done") streamFile(idx);
       }).catch(() => {})
     ));
-
     updateBulkBtn();
   }
 
   // ── Per-row "Tải & Lưu" ───────────────────────────────────────────────────
 
   async function downloadAndSaveRow(idx) {
-    const item  = probeItems[idx];
-    if (!item || item.status !== "done") return;
-    const fname = item.filename || "video.mp4";
-
-    // Pick file location FIRST
-    let saveTarget = null;
-    try {
-      if (typeof window.showSaveFilePicker === "function") {
-        saveTarget = await window.showSaveFilePicker({
-          suggestedName: fname,
-          types: [{ description: "Video MP4", accept: { "video/mp4": [".mp4"] } }],
-        });
-      }
-    } catch (e) {
-      if (e.name === "AbortError") return;
-      saveTarget = null;
-    }
-
+    if (probeItems[idx]?.status !== "done") return;
     await startDownloadJob(idx);
-    if (rowDl[idx] && rowDl[idx].status === "dl_done") {
-      await streamFile(idx, saveTarget);
-    }
+    if (rowDl[idx]?.status === "dl_done") streamFile(idx);
     updateBulkBtn();
   }
 
@@ -355,52 +311,19 @@
     });
   }
 
-  // ── Core: stream file to save target ──────────────────────────────────────
+  // ── Core: trigger browser download ───────────────────────────────────────
 
-  async function streamFile(idx, saveTarget) {
-    const dl    = rowDl[idx];
+  function streamFile(idx) {
+    const dl = rowDl[idx];
     if (!dl || dl.status !== "dl_done") return;
-
-    const fname   = dl.filename || "video.mp4";
-    const fileUrl = `/api/dl_file/${dl.dlId}`;
-
-    dl.status = "saving";
-    renderRow(idx);
-
-    try {
-      let fileHandle = null;
-
-      if (saveTarget && saveTarget.kind === "file") {
-        fileHandle = saveTarget;
-      } else if (saveTarget && saveTarget.kind === "directory") {
-        fileHandle = await saveTarget.getFileHandle(fname, { create: true });
-      }
-
-      const response = await fetch(fileUrl);
-      if (!response.ok) throw new Error("Server trả về lỗi khi stream file.");
-
-      if (fileHandle) {
-        const writable = await fileHandle.createWritable();
-        await response.body.pipeTo(writable);
-      } else {
-        // Fallback: trigger browser download
-        const blob = await response.blob();
-        const url  = URL.createObjectURL(blob);
-        const a    = Object.assign(document.createElement("a"), { href: url, download: fname });
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-
-      dl.status = "saved";
-    } catch (e) {
-      if (e.name === "AbortError") {
-        dl.status = "dl_done"; // user cancelled — reset so they can try again
-      } else {
-        dl.status = "save_error";
-        dl.error  = e.message;
-      }
-    }
-
+    const a = Object.assign(document.createElement("a"), {
+      href:     `/api/dl_file/${dl.dlId}`,
+      download: dl.filename || "video.mp4",
+    });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    dl.status = "saved";
     renderRow(idx);
   }
 
