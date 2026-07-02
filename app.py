@@ -243,6 +243,7 @@ def _download_worker(dl_id: str, url: str, height=None):
 
     opts = {
         "format": core.format_for_height(height),
+        "merge_output_format": "mp4",
         "outtmpl": outtmpl,
         "quiet": True,
         "no_warnings": True,
@@ -267,7 +268,7 @@ def _download_worker(dl_id: str, url: str, height=None):
             raise RuntimeError("Tải xong nhưng không tìm thấy file.")
 
         src = os.path.join(tmpdir, files[0])
-        ext = os.path.splitext(files[0])[1] or ".mp4"
+        ext = ".mp4"
 
         caption = ""
         if info:
