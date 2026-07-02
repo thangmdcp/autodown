@@ -360,7 +360,7 @@ def dl_file(dl_id: str):
     @after_this_request
     def _cleanup(response):
         def _rm():
-            time.sleep(300)
+            time.sleep(30)
             DOWNLOADS.pop(dl_id, None)
             if tmpdir:
                 shutil.rmtree(tmpdir, ignore_errors=True)

@@ -163,13 +163,18 @@
                      dlId: null, filename: null, error: null };
     });
     showTable();
-    // Process links one by one: download → save → next
+    // Process links one by one: download → save → next (auto-retry once on save_error)
     (async () => {
       for (let idx = 0; idx < urls.length; idx++) {
-        try {
-          await startDownloadJob(idx);
-          if (rowDl[idx]?.status === "dl_done") await streamFile(idx);
-        } catch (e) {}
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await startDownloadJob(idx);
+            if (rowDl[idx]?.status === "dl_done") await streamFile(idx);
+          } catch (e) {}
+          if (rowDl[idx]?.status === "saved") break;    // success → next link
+          if (rowDl[idx]?.status !== "save_error") break; // dl_error → show to user, don't retry
+          // save_error (e.g. server restart) → retry once
+        }
       }
     })();
   });
