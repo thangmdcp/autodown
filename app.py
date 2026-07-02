@@ -232,14 +232,14 @@ def _dl_progress_hook(dl: dict):
     return hook
 
 
-def _download_worker(dl_id: str, url: str, filename: str, height=None):
+def _download_worker(dl_id: str, url: str, height=None):
     dl = DOWNLOADS[dl_id]
     tmpdir = tempfile.mkdtemp(prefix="fbdl_")
     dl["tmpdir"] = tmpdir
     dl["status"] = "downloading"
 
-    base = os.path.splitext(filename)[0]
-    outtmpl = os.path.join(tmpdir, f"{base}.%(ext)s")
+    # Use video ID as temp name; rename to caption-based name after download
+    outtmpl = os.path.join(tmpdir, "%(id)s.%(ext)s")
 
     opts = {
         "format": core.format_for_height(height),
@@ -255,15 +255,35 @@ def _download_worker(dl_id: str, url: str, filename: str, height=None):
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
+            info = ydl.extract_info(url, download=True)
 
         files = [f for f in os.listdir(tmpdir) if not f.endswith(".part")]
         if not files:
             raise RuntimeError("Tải xong nhưng không tìm thấy file.")
 
         src = os.path.join(tmpdir, files[0])
+        ext = os.path.splitext(files[0])[1] or ".mp4"
+
+        caption = ""
+        if info:
+            video_id = info.get("id") or "unknown"
+            caption  = info.get("description") or info.get("title") or ""
+            base     = core.sanitize_filename(caption, video_id)
+        else:
+            base = "video"
+
+        clean_name = base + ext
+        clean_path = os.path.join(tmpdir, clean_name)
+        if src != clean_path:
+            try:
+                os.rename(src, clean_path)
+                src = clean_path
+            except OSError:
+                clean_name = files[0]
+
         dl["path"]     = src
-        dl["filename"] = files[0]
+        dl["filename"] = clean_name
+        dl["caption"]  = caption
         dl["status"]   = "done"
         dl["percent"]  = 100
     except Exception as e:
@@ -275,10 +295,9 @@ def _download_worker(dl_id: str, url: str, filename: str, height=None):
 
 @app.route("/api/start_dl", methods=["POST"])
 def start_dl():
-    data     = request.get_json(force=True) or {}
-    url      = (data.get("url") or "").strip()
-    filename = (data.get("filename") or "video.mp4").strip()
-    height   = data.get("height")
+    data   = request.get_json(force=True) or {}
+    url    = (data.get("url") or "").strip()
+    height = data.get("height")
 
     if not url:
         return jsonify({"error": "Thiếu URL."}), 400
@@ -293,12 +312,12 @@ def start_dl():
     dl_id = uuid.uuid4().hex[:12]
     DOWNLOADS[dl_id] = {
         "status": "queued", "percent": 0, "speed": None, "eta": None,
-        "path": None, "filename": filename, "tmpdir": None, "error": None,
-        "created": time.time(),
+        "path": None, "filename": None, "caption": None,
+        "tmpdir": None, "error": None, "created": time.time(),
     }
     threading.Thread(
         target=_download_worker,
-        args=(dl_id, url, filename, height),
+        args=(dl_id, url, height),
         daemon=True,
     ).start()
     return jsonify({"dl_id": dl_id})

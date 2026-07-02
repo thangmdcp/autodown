@@ -18,14 +18,8 @@
 
   // ── State ─────────────────────────────────────────────────────────────────
 
-  let probeId        = null;
-  let probeTimer     = null;
-  let probeItems     = [];
-  let probeStartTime = 0;
-
-  const PROBE_TIMEOUT_MS = 90_000; // 90s client-side safety net
-
-  const rowDl = {};   // idx → {dlId, status, percent, speed, eta, filename, error}
+  let probeItems = [];   // [{url, platform, caption, filename, status}]
+  const rowDl = {};      // idx → {dlId, status, percent, speed, eta, filename, caption, error}
 
   // ── Icons ─────────────────────────────────────────────────────────────────
 
@@ -151,104 +145,46 @@
 
   // ── Submit → probe ────────────────────────────────────────────────────────
 
-  probeForm.addEventListener("submit", async e => {
+  probeForm.addEventListener("submit", e => {
     e.preventDefault();
     hideErr();
 
     const urls = parseUrls();
     if (!urls.length) { showErr("Vui lòng nhập ít nhất 1 link."); return; }
 
-    setBusy(true);
     Object.keys(rowDl).forEach(k => delete rowDl[k]);
-    probeItems = [];
-    probeId = null;
-    resultsBody.innerHTML = "";
-    resultsCard.classList.add("is-hidden");
-    emptyState.classList.remove("is-hidden");
+    probeItems = urls.map(url => ({
+      url, status: "done", caption: "", filename: "", error: "",
+      platform: detectPlatform(url),
+    }));
+    showTable();
     dlSaveAllBtn.disabled = true;
 
-    const fd = new FormData();
-    fd.set("urls", urls.join("\n"));
-
-    try {
-      const res  = await fetch("/api/probe", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) { setBusy(false); showErr(data.error || "Lỗi server."); return; }
-
-      probeId        = data.probe_id;
-      probeStartTime = Date.now();
-      probeItems = urls.map(url => ({
-        url, status: "queued", caption: "", resolutions: [], error: "",
-        platform: detectPlatform(url),
-      }));
-      showTable();
-
-      if (probeTimer) clearInterval(probeTimer);
-      probeTimer = setInterval(pollProbe, 700);
-    } catch {
-      setBusy(false);
-      showErr("Không thể kết nối tới server.");
-    }
+    // Start all downloads immediately — no separate probe step
+    urls.forEach((_, idx) => {
+      startDownloadJob(idx)
+        .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
+        .catch(() => {});
+    });
   });
 
-  async function pollProbe() {
-    // Client-side safety net: if server never responds in time
-    if (Date.now() - probeStartTime > PROBE_TIMEOUT_MS) {
-      clearInterval(probeTimer);
-      setBusy(false);
-      probeItems.forEach(item => {
-        if (item.status === "queued" || item.status === "probing") {
-          item.status = "error";
-          item.error  = "Quá thời gian chờ. Video có thể cần đăng nhập hoặc bị chặn.";
-        }
-      });
-      renderAllRows();
-      return;
-    }
-    try {
-      const res  = await fetch(`/api/probe_status/${probeId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      // Preserve client-side platform when server hasn't set it yet
-      data.items.forEach((serverItem, i) => {
-        if (!serverItem.platform && probeItems[i]?.platform) {
-          serverItem.platform = probeItems[i].platform;
-        }
-      });
-      probeItems = data.items;
-      renderAllRows();
-      updateBulkBtn();
-      if (data.finished) { clearInterval(probeTimer); setBusy(false); }
-    } catch {
-      // Don't stop polling on transient network hiccups — just skip this tick
-    }
-  }
+  // ── "Tải & Lưu tất cả" — retry failed ones ────────────────────────────────
 
-  // ── "Tải & Lưu tất cả" button ─────────────────────────────────────────────
-
-  dlSaveAllBtn.addEventListener("click", downloadAndSaveAll);
-
-  async function downloadAndSaveAll() {
-    const pending = probeItems
-      .map((item, idx) => ({ item, idx }))
-      .filter(({ item, idx }) => item.status === "done" && !rowDl[idx]);
-    if (!pending.length) return;
-    dlSaveAllBtn.disabled = true;
-    await Promise.all(pending.map(({ idx }) =>
-      startDownloadJob(idx).then(() => {
-        if (rowDl[idx]?.status === "dl_done") streamFile(idx);
-      }).catch(() => {})
-    ));
-    updateBulkBtn();
-  }
+  dlSaveAllBtn.addEventListener("click", () => {
+    probeItems.forEach((_, idx) => {
+      if (rowDl[idx]?.status === "dl_error" || rowDl[idx]?.status === "save_error") {
+        startDownloadJob(idx)
+          .then(() => { if (rowDl[idx]?.status === "dl_done") streamFile(idx); })
+          .catch(() => {});
+      }
+    });
+  });
 
   // ── Per-row "Tải & Lưu" ───────────────────────────────────────────────────
 
   async function downloadAndSaveRow(idx) {
-    if (probeItems[idx]?.status !== "done") return;
     await startDownloadJob(idx);
     if (rowDl[idx]?.status === "dl_done") streamFile(idx);
-    updateBulkBtn();
   }
 
   // ── Core: download job (returns when done or throws) ──────────────────────
@@ -301,6 +237,8 @@
           Object.assign(rowDl[idx], d, { dlId });
           if (d.status === "done") {
             rowDl[idx].status = "dl_done";
+            if (d.caption)  probeItems[idx].caption  = d.caption;
+            if (d.filename) probeItems[idx].filename = d.filename;
             clearInterval(timer); renderRow(idx); resolve(dlId);
           } else if (d.status === "error") {
             clearInterval(timer); rowDl[idx].status = "dl_error";
@@ -330,8 +268,12 @@
   // ── Bulk button state ─────────────────────────────────────────────────────
 
   function updateBulkBtn() {
-    const hasPending = probeItems.some((it, i) => it.status === "done" && !rowDl[i]);
-    dlSaveAllBtn.disabled = !hasPending;
+    const hasError = Object.values(rowDl).some(d =>
+      d.status === "dl_error" || d.status === "save_error"
+    );
+    dlSaveAllBtn.disabled = !hasError;
+    dlSaveAllBtn.textContent = ""; // re-render via innerHTML below
+    dlSaveAllBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> ${hasError ? "Thử lại tất cả" : "Tải Tất Cả"}`;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
