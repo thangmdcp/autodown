@@ -246,7 +246,8 @@ def _download_worker(dl_id: str, url: str, filename: str = "thangvd.mp4", height
         "no_warnings": True,
         "noprogress": True,
         "progress_hooks": [_dl_progress_hook(dl)],
-        "socket_timeout": 60,
+        "concurrent_fragment_downloads": 4,
+        "socket_timeout": 20,
         "retries": 3,
         "fragment_retries": 3,
     }

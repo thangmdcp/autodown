@@ -251,7 +251,7 @@
             renderRow(idx); reject(new Error(d.error || "Download failed"));
           } else { renderRow(idx); }
         } catch (e) { clearInterval(timer); reject(e); }
-      }, 700);
+      }, 300);
     });
   }
 
