@@ -311,7 +311,6 @@ def _run_yt_dlp_download(url: str, height=None, progress_hook=None) -> dict:
         "socket_timeout": 20,
         "retries": 3,
         "fragment_retries": 3,
-        "extractor_args": core.YT_EXTRACTOR_ARGS,
     }
     if progress_hook:
         opts["progress_hooks"] = [progress_hook]
@@ -466,7 +465,7 @@ def api_extract():
     if not url:
         return jsonify({"success": False, "error": "Thiếu URL."}), 400
     if not core.validate_url(url):
-        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok, YouTube."}), 400
+        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok."}), 400
 
     try:
         result = core.probe_one(url)
@@ -496,7 +495,7 @@ def api_download():
     if not url:
         return jsonify({"success": False, "error": "Thiếu URL."}), 400
     if not core.validate_url(url):
-        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok, YouTube."}), 400
+        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok."}), 400
     if height is not None:
         try:
             height = int(height)

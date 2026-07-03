@@ -21,15 +21,7 @@ URL_PATTERN = re.compile(r'https?://\S+')
 _SUPPORTED_DOMAINS = (
     "facebook.com", "fb.watch",
     "tiktok.com", "vm.tiktok.com",
-    "youtube.com", "youtu.be",
 )
-
-# YouTube increasingly blocks the default "web" client from datacenter IPs
-# (e.g. Render) with "Sign in to confirm you're not a bot". tv_embedded/ios
-# mimic non-browser API clients that are (currently) far less likely to be
-# flagged — no cookies involved, just a different anonymous API client.
-# yt-dlp tries these in order and falls back on failure.
-YT_EXTRACTOR_ARGS = {"youtube": {"player_client": ["tv_embedded", "ios", "android", "web"]}}
 
 def _label_for_height(h: int) -> str:
     if h >= 2160:
@@ -101,8 +93,6 @@ def detect_platform(url: str) -> str:
         return "facebook"
     if "tiktok.com" in u:
         return "tiktok"
-    if "youtube.com" in u or "youtu.be" in u:
-        return "youtube"
     return "other"
 
 
@@ -177,7 +167,6 @@ def probe_one(url: str) -> dict:
         "skip_download": True,
         "socket_timeout": 15,
         "extractor_retries": 0,
-        "extractor_args": YT_EXTRACTOR_ARGS,
     }
 
     try:
@@ -267,7 +256,7 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
     if on_event:
         on_event({"type": "probing"})
 
-    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "extractor_args": YT_EXTRACTOR_ARGS}
+    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
 
     try:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
@@ -300,7 +289,6 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
     dl_opts = {
         "format": PREFERRED_FORMAT,
         "outtmpl": output_template,
-        "extractor_args": YT_EXTRACTOR_ARGS,
         "progress_hooks": [_make_progress_hook(on_event)],
         "quiet": True,
         "no_warnings": True,
