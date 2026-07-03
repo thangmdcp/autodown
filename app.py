@@ -311,6 +311,7 @@ def _run_yt_dlp_download(url: str, height=None, progress_hook=None) -> dict:
         "socket_timeout": 20,
         "retries": 3,
         "fragment_retries": 3,
+        "extractor_args": core.YT_EXTRACTOR_ARGS,
     }
     if progress_hook:
         opts["progress_hooks"] = [progress_hook]

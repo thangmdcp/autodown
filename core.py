@@ -24,6 +24,12 @@ _SUPPORTED_DOMAINS = (
     "youtube.com", "youtu.be",
 )
 
+# YouTube increasingly blocks the default "web" client from datacenter IPs
+# (e.g. Render) with "Sign in to confirm you're not a bot". The android/ios
+# clients mimic mobile-app requests and are far less likely to be flagged —
+# no cookies involved, just a different (still anonymous) API client.
+YT_EXTRACTOR_ARGS = {"youtube": {"player_client": ["android", "web"]}}
+
 def _label_for_height(h: int) -> str:
     if h >= 2160:
         return f"4K ({h}p)"
@@ -170,6 +176,7 @@ def probe_one(url: str) -> dict:
         "skip_download": True,
         "socket_timeout": 15,
         "extractor_retries": 0,
+        "extractor_args": YT_EXTRACTOR_ARGS,
     }
 
     try:
@@ -259,7 +266,7 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
     if on_event:
         on_event({"type": "probing"})
 
-    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "extractor_args": YT_EXTRACTOR_ARGS}
 
     try:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
@@ -292,6 +299,7 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
     dl_opts = {
         "format": PREFERRED_FORMAT,
         "outtmpl": output_template,
+        "extractor_args": YT_EXTRACTOR_ARGS,
         "progress_hooks": [_make_progress_hook(on_event)],
         "quiet": True,
         "no_warnings": True,
