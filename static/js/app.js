@@ -31,12 +31,14 @@
     save:  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 21v-6h6v6M9 3v4h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
-  // ── Settings toggle (ẩn/hiện API key + Cloudinary config + API docs) ──────
+  // ── Settings toggle (ẩn/hiện API key + API docs) ─────────────────────────
+  // Cloudinary Configuration card is intentionally excluded — it's locked
+  // (read-only) once CLOUDINARY_* env vars are set on the server, so the
+  // form has no action left to offer and stays permanently hidden.
 
   const settingsToggle = document.getElementById("settings-toggle");
   const SETTINGS_SECTIONS = [
     document.getElementById("api-key-wrap"),
-    document.getElementById("cloudinary-config"),
     document.getElementById("api-docs"),
   ];
   const SETTINGS_STORAGE_KEY = "autodown_settings_visible";
