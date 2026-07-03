@@ -31,6 +31,30 @@
     save:  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 21v-6h6v6M9 3v4h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
+  // ── Settings toggle (ẩn/hiện API key + Cloudinary config + API docs) ──────
+
+  const settingsToggle = document.getElementById("settings-toggle");
+  const SETTINGS_SECTIONS = [
+    document.getElementById("api-key-wrap"),
+    document.getElementById("cloudinary-config"),
+    document.getElementById("api-docs"),
+  ];
+  const SETTINGS_STORAGE_KEY = "autodown_settings_visible";
+  let _settingsVisible = localStorage.getItem(SETTINGS_STORAGE_KEY) === "1";
+
+  function applySettingsVisibility() {
+    SETTINGS_SECTIONS.forEach(el => el?.classList.toggle("is-hidden", !_settingsVisible));
+    settingsToggle?.classList.toggle("is-active", _settingsVisible);
+    settingsToggle?.setAttribute("aria-expanded", String(_settingsVisible));
+  }
+  applySettingsVisibility();
+
+  settingsToggle?.addEventListener("click", () => {
+    _settingsVisible = !_settingsVisible;
+    localStorage.setItem(SETTINGS_STORAGE_KEY, _settingsVisible ? "1" : "0");
+    applySettingsVisibility();
+  });
+
   // ── API key display ───────────────────────────────────────────────────────
 
   const apiKeyVal    = document.getElementById("api-key-val");

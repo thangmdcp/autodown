@@ -179,6 +179,28 @@ body {
 }
 .api-key-btn--new:hover { background: rgba(99,102,241,0.08); color: var(--accent-2); }
 
+.settings-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 150ms var(--ease-out), background 150ms var(--ease-out), border-color 150ms var(--ease-out);
+}
+.settings-toggle-btn:hover { color: var(--accent-1); }
+.settings-toggle-btn.is-active {
+  color: var(--accent-1);
+  border-color: rgba(99,102,241,0.35);
+  background: rgba(99,102,241,0.08);
+}
+
 /* ── Card ─────────────────────────────────────────────────────────────────── */
 
 .card {
