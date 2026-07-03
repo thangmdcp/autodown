@@ -25,10 +25,11 @@ _SUPPORTED_DOMAINS = (
 )
 
 # YouTube increasingly blocks the default "web" client from datacenter IPs
-# (e.g. Render) with "Sign in to confirm you're not a bot". The android/ios
-# clients mimic mobile-app requests and are far less likely to be flagged —
-# no cookies involved, just a different (still anonymous) API client.
-YT_EXTRACTOR_ARGS = {"youtube": {"player_client": ["android", "web"]}}
+# (e.g. Render) with "Sign in to confirm you're not a bot". tv_embedded/ios
+# mimic non-browser API clients that are (currently) far less likely to be
+# flagged — no cookies involved, just a different anonymous API client.
+# yt-dlp tries these in order and falls back on failure.
+YT_EXTRACTOR_ARGS = {"youtube": {"player_client": ["tv_embedded", "ios", "android", "web"]}}
 
 def _label_for_height(h: int) -> str:
     if h >= 2160:
