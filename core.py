@@ -236,6 +236,7 @@ def probe_one(url: str) -> dict:
         "ext": ext,
         "resolutions": resolutions,
         "platform": detect_platform(url),
+        "thumbnail": info.get("thumbnail"),
     }
 
 

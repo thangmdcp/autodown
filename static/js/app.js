@@ -132,6 +132,79 @@
     }
   });
 
+  // ── Cloudinary Configuration ─────────────────────────────────────────────
+
+  const cloudForm       = document.getElementById("cloudinary-form");
+  const cloudNameInput  = document.getElementById("cloud-name-input");
+  const cloudKeyInput   = document.getElementById("cloud-api-key-input");
+  const cloudSecretInput = document.getElementById("cloud-api-secret-input");
+  const cloudSaveBtn    = document.getElementById("cloudinary-save-btn");
+  const cloudStatusEl   = document.getElementById("cloudinary-status");
+  const cloudEnvNote    = document.getElementById("cloudinary-env-note");
+
+  function setCloudStatus(text, kind) {
+    if (!cloudStatusEl) return;
+    cloudStatusEl.textContent = text;
+    cloudStatusEl.classList.toggle("is-error", kind === "error");
+    cloudStatusEl.classList.toggle("is-ok", kind === "ok");
+  }
+
+  async function loadCloudinaryConfig() {
+    try {
+      const res = await apiFetch("/api/cloudinary_config");
+      const d   = await res.json();
+      if (!res.ok) { setCloudStatus(d.error || "Lỗi khi tải cấu hình.", "error"); return; }
+
+      cloudNameInput.value = d.cloud_name || "";
+      cloudKeyInput.value  = d.api_key || "";
+      cloudSecretInput.placeholder = d.api_secret_set
+        ? "•••••••• (đã lưu — để trống nếu giữ nguyên)"
+        : "Nhập API Secret";
+
+      const isEnv = d.source === "env";
+      [cloudNameInput, cloudKeyInput, cloudSecretInput, cloudSaveBtn].forEach(el => { if (el) el.disabled = isEnv; });
+      if (cloudEnvNote) cloudEnvNote.style.display = isEnv ? "" : "none";
+
+      if (isEnv) {
+        setCloudStatus("");
+      } else if (d.cloud_name && d.api_key && d.api_secret_set) {
+        setCloudStatus("Đã cấu hình.", "ok");
+      } else {
+        setCloudStatus("Chưa cấu hình đầy đủ.");
+      }
+    } catch {
+      setCloudStatus("Lỗi kết nối.", "error");
+    }
+  }
+  loadCloudinaryConfig();
+
+  cloudForm?.addEventListener("submit", async e => {
+    e.preventDefault();
+    cloudSaveBtn.disabled = true;
+    try {
+      const res = await apiFetch("/api/cloudinary_config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cloud_name: cloudNameInput.value.trim(),
+          api_key:    cloudKeyInput.value.trim(),
+          api_secret: cloudSecretInput.value,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        cloudSecretInput.value = "";
+        await loadCloudinaryConfig();
+      } else {
+        setCloudStatus(d.error || "Lỗi khi lưu.", "error");
+      }
+    } catch {
+      setCloudStatus("Lỗi kết nối.", "error");
+    } finally {
+      cloudSaveBtn.disabled = false;
+    }
+  });
+
   // ── Textarea auto-resize ──────────────────────────────────────────────────
 
   function autoResize() {

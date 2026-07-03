@@ -211,6 +211,7 @@ label {
 
 input[type="url"],
 input[type="text"],
+input[type="password"],
 textarea {
   width: 100%;
   background: var(--surface-2);
@@ -780,6 +781,20 @@ textarea:focus {
   color: var(--text);
   margin-bottom: 7px;
 }
+
+.docs-field-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.docs-status {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.docs-status.is-error { color: var(--error); }
+.docs-status.is-ok { color: var(--success); }
 
 .docs-code-wrap {
   position: relative;

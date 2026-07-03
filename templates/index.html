@@ -133,6 +133,48 @@
       <p>Dán link Facebook hoặc TikTok rồi bấm <strong>Tải Xuống</strong></p>
     </section>
 
+    <details class="card docs-card" id="cloudinary-config">
+      <summary class="docs-summary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 18a4.5 4.5 0 0 1-1.5-8.74A5.5 5.5 0 0 1 16.5 8a4 4 0 0 1 1 7.9M12 12v7m0-7 3 3m-3-3-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Cloudinary Configuration
+      </summary>
+
+      <div class="docs-body">
+        <p class="docs-intro">
+          Video tải qua API <code>/api/download</code> sẽ được upload lên Cloudinary rồi xoá khỏi server ngay —
+          cần nhập thông tin tài khoản Cloudinary bên dưới trước khi dùng endpoint đó.
+        </p>
+        <p class="docs-note" id="cloudinary-env-note" style="display:none;">
+          Đang dùng biến môi trường (CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET) đặt sẵn trên server — không thể sửa qua giao diện.
+        </p>
+        <p class="docs-note">
+          Nếu không đặt biến môi trường, giá trị nhập ở đây được lưu vào file trên server và
+          <strong>sẽ mất khi Render redeploy</strong> — cần nhập lại sau mỗi lần deploy code mới.
+        </p>
+
+        <form id="cloudinary-form">
+          <div class="docs-field">
+            <div class="docs-label">Cloud Name</div>
+            <input type="text" id="cloud-name-input" autocomplete="off" placeholder="vd: my-cloud-name">
+          </div>
+          <div class="docs-field">
+            <div class="docs-label">API Key</div>
+            <input type="text" id="cloud-api-key-input" autocomplete="off" placeholder="vd: 123456789012345">
+          </div>
+          <div class="docs-field">
+            <div class="docs-label">API Secret</div>
+            <input type="password" id="cloud-api-secret-input" autocomplete="off" placeholder="Nhập API Secret">
+          </div>
+          <div class="docs-field-row">
+            <button type="submit" class="row-btn row-btn--primary" id="cloudinary-save-btn">Lưu cấu hình</button>
+            <span id="cloudinary-status" class="docs-status"></span>
+          </div>
+        </form>
+      </div>
+    </details>
+
     <details class="card docs-card" id="api-docs">
       <summary class="docs-summary">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -168,7 +210,52 @@
           </div>
         </div>
 
-        <h3 class="docs-h3">1. Bắt đầu tải — <code>POST /api/start_dl</code></h3>
+        <h3 class="docs-h3">Extract metadata — <code>POST /api/extract</code></h3>
+        <p class="docs-p">Không tải file, không upload Cloudinary — chỉ lấy caption/thumbnail để hiển thị trước.</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">curl -X POST https://autodown.vibevic.com/api/extract \
+  -H "X-API-Key: &lt;API_KEY_CUA_BAN&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.facebook.com/reel/XXXXXXXXXX"}'
+
+# → {"success": true, "platform": "facebook", "type": "video", "caption": "...", "thumbnail": "...", "mediaCount": 1}</pre>
+          <button class="docs-copy-btn" type="button" data-copy="curl -X POST https://autodown.vibevic.com/api/extract -H &quot;X-API-Key: &lt;API_KEY_CUA_BAN&gt;&quot; -H &quot;Content-Type: application/json&quot; -d '{&quot;url&quot;: &quot;https://www.facebook.com/reel/XXXXXXXXXX&quot;}'">Copy</button>
+        </div>
+
+        <h3 class="docs-h3">Tải + upload Cloudinary (1 lần gọi) — <code>POST /api/download</code></h3>
+        <p class="docs-p">
+          Tải video, upload lên Cloudinary, xoá file tạm trên server ngay sau khi upload xong, trả về link Cloudinary.
+          Cần cấu hình Cloudinary ở mục phía trên trước. Request có thể mất vài giây tới vài chục giây tuỳ độ dài video.
+        </p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">curl -X POST https://autodown.vibevic.com/api/download \
+  -H "X-API-Key: &lt;API_KEY_CUA_BAN&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.facebook.com/reel/XXXXXXXXXX"}'
+
+# → {"success": true, "caption": "...", "type": "video",
+#     "media": [{"type": "video", "url": "https://res.cloudinary.com/.../temp/abc123/xxxx.mp4", "public_id": "temp/abc123/xxxx"}]}</pre>
+          <button class="docs-copy-btn" type="button" data-copy="curl -X POST https://autodown.vibevic.com/api/download -H &quot;X-API-Key: &lt;API_KEY_CUA_BAN&gt;&quot; -H &quot;Content-Type: application/json&quot; -d '{&quot;url&quot;: &quot;https://www.facebook.com/reel/XXXXXXXXXX&quot;}'">Copy</button>
+        </div>
+
+        <h3 class="docs-h3">Xoá asset Cloudinary — <code>POST /api/cleanup</code></h3>
+        <p class="docs-p">Gọi khi web app của bạn không cần asset đó nữa — dùng đúng <code>public_id</code> nhận được từ <code>/api/download</code>.</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">curl -X POST https://autodown.vibevic.com/api/cleanup \
+  -H "X-API-Key: &lt;API_KEY_CUA_BAN&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"public_ids": ["temp/abc123/xxxx"]}'
+
+# → {"success": true, "deleted": {"temp/abc123/xxxx": "deleted"}}</pre>
+          <button class="docs-copy-btn" type="button" data-copy="curl -X POST https://autodown.vibevic.com/api/cleanup -H &quot;X-API-Key: &lt;API_KEY_CUA_BAN&gt;&quot; -H &quot;Content-Type: application/json&quot; -d '{&quot;public_ids&quot;: [&quot;temp/abc123/xxxx&quot;]}'">Copy</button>
+        </div>
+
+        <p class="docs-note">
+          Service này không lưu job/state gì cả — mỗi request tự chứa toàn bộ thông tin cần thiết.
+          Web app gọi API chịu trách nhiệm giữ lại <code>public_id</code> và tự gọi <code>/api/cleanup</code> khi xong việc.
+        </p>
+
+        <h3 class="docs-h3">1. Bắt đầu tải (luồng polling cho giao diện web) — <code>POST /api/start_dl</code></h3>
         <p class="docs-p">Body JSON: <code>url</code> (bắt buộc), <code>height</code> (tuỳ chọn, null = chất lượng cao nhất).</p>
         <div class="docs-code-wrap">
           <pre class="docs-code">curl -X POST https://autodown.vibevic.com/api/start_dl \

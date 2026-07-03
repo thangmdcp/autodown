@@ -18,6 +18,7 @@ import webbrowser
 import yt_dlp
 from flask import Flask, abort, after_this_request, jsonify, render_template, request, send_file
 
+import cloudinary_client
 import core
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,6 +57,21 @@ def _save_config(cfg: dict):
 
 _config = _load_config()
 API_KEY: str = _config["api_key"]
+
+
+# ── Cloudinary config (env var priority, same pattern as API_KEY) ──────────
+def _cloudinary_env() -> dict | None:
+    cloud  = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
+    key    = os.environ.get("CLOUDINARY_API_KEY", "").strip()
+    secret = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
+    if cloud and key and secret:
+        return {"cloud_name": cloud, "api_key": key, "api_secret": secret}
+    return None
+
+
+def _cloudinary_config() -> dict:
+    return _cloudinary_env() or (_config.get("cloudinary") or {})
+
 
 app = Flask(__name__)
 
@@ -124,6 +140,42 @@ def regenerate_key():
     API_KEY = _config["api_key"]
     _save_config(_config)
     return jsonify({"api_key": API_KEY, "key_name": name})
+
+
+@app.route("/api/cloudinary_config", methods=["GET", "POST"])
+def cloudinary_config_route():
+    env = _cloudinary_env()
+
+    if request.method == "GET":
+        cfg = env or (_config.get("cloudinary") or {})
+        return jsonify({
+            "cloud_name":     cfg.get("cloud_name", ""),
+            "api_key":        cfg.get("api_key", ""),
+            "api_secret_set": bool(cfg.get("api_secret")),
+            "source":         "env" if env else "config",
+        })
+
+    if env:
+        return jsonify({
+            "error": "Cloudinary đang được cấu hình qua biến môi trường server, không thể sửa qua giao diện."
+        }), 409
+
+    data       = request.get_json(force=True) or {}
+    cloud_name = (data.get("cloud_name") or "").strip()
+    api_key    = (data.get("api_key") or "").strip()
+    api_secret = (data.get("api_secret") or "").strip()
+
+    existing = _config.get("cloudinary") or {}
+    if not api_secret:
+        api_secret = existing.get("api_secret", "")
+
+    if not (cloud_name and api_key and api_secret):
+        return jsonify({"error": "Vui lòng nhập đủ Cloud Name, API Key và API Secret."}), 400
+
+    _config["cloudinary"] = {"cloud_name": cloud_name, "api_key": api_key, "api_secret": api_secret}
+    _save_config(_config)
+    return jsonify({"success": True})
+
 
 # probe_id -> {items: list[dict], finished: bool, created: float}
 PROBES: dict = {}
@@ -244,71 +296,86 @@ def _dl_progress_hook(dl: dict):
     return hook
 
 
+def _run_yt_dlp_download(url: str, height=None, progress_hook=None) -> dict:
+    """Runs yt-dlp against url and returns {path, filename, caption, video_id, tmpdir}.
+    Raises on failure. Caller is responsible for cleaning up the returned tmpdir."""
+    tmpdir = tempfile.mkdtemp(prefix="fbdl_")
+    outtmpl = os.path.join(tmpdir, "%(id)s.%(ext)s")
+    opts = {
+        "format": core.format_for_height(height),
+        "outtmpl": outtmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "concurrent_fragment_downloads": 4,
+        "socket_timeout": 20,
+        "retries": 3,
+        "fragment_retries": 3,
+    }
+    if progress_hook:
+        opts["progress_hooks"] = [progress_hook]
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+
+    # Get filepath from yt-dlp info (most reliable)
+    src = None
+    if info:
+        for rdl in (info.get("requested_downloads") or []):
+            fp = rdl.get("filepath") or rdl.get("filename")
+            if fp and os.path.exists(fp):
+                src = fp
+                break
+
+    # Fallback: largest file in tmpdir
+    if not src:
+        candidates = sorted(
+            [f for f in os.listdir(tmpdir) if not f.endswith(".part")],
+            key=lambda f: os.path.getsize(os.path.join(tmpdir, f)),
+            reverse=True,
+        )
+        if not candidates:
+            raise RuntimeError("Tải xong nhưng không tìm thấy file.")
+        src = os.path.join(tmpdir, candidates[0])
+
+    if not os.path.exists(src):
+        raise RuntimeError(f"File không tồn tại: {os.path.basename(src)}")
+
+    caption = ""
+    video_id = ""
+    if info:
+        caption  = info.get("description") or info.get("title") or ""
+        video_id = info.get("id") or ""
+
+    return {
+        "path":     src,
+        "filename": core.sanitize_filename(caption, video_id) + ".mp4",
+        "caption":  caption,
+        "video_id": video_id,
+        "tmpdir":   tmpdir,
+    }
+
+
 def _download_worker(dl_id: str, url: str, height=None):
     dl = DOWNLOADS[dl_id]
-    tmpdir = tempfile.mkdtemp(prefix="fbdl_")
-    dl["tmpdir"] = tmpdir
     # "queued" while waiting for a semaphore slot
     dl["status"] = "queued"
 
     _DL_SEM.acquire()
     try:
         dl["status"] = "downloading"
-        outtmpl = os.path.join(tmpdir, "%(id)s.%(ext)s")
-        opts = {
-            "format": core.format_for_height(height),
-            "outtmpl": outtmpl,
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": True,
-            "progress_hooks": [_dl_progress_hook(dl)],
-            "concurrent_fragment_downloads": 4,
-            "socket_timeout": 20,
-            "retries": 3,
-            "fragment_retries": 3,
-        }
-
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-
-        # Get filepath from yt-dlp info (most reliable)
-        src = None
-        if info:
-            for rdl in (info.get("requested_downloads") or []):
-                fp = rdl.get("filepath") or rdl.get("filename")
-                if fp and os.path.exists(fp):
-                    src = fp
-                    break
-
-        # Fallback: largest file in tmpdir
-        if not src:
-            candidates = sorted(
-                [f for f in os.listdir(tmpdir) if not f.endswith(".part")],
-                key=lambda f: os.path.getsize(os.path.join(tmpdir, f)),
-                reverse=True,
-            )
-            if not candidates:
-                raise RuntimeError("Tải xong nhưng không tìm thấy file.")
-            src = os.path.join(tmpdir, candidates[0])
-
-        if not os.path.exists(src):
-            raise RuntimeError(f"File không tồn tại: {os.path.basename(src)}")
-
-        caption = ""
-        video_id = ""
-        if info:
-            caption  = info.get("description") or info.get("title") or ""
-            video_id = info.get("id") or ""
-
-        dl["path"]     = src
-        dl["filename"] = core.sanitize_filename(caption, video_id) + ".mp4"
-        dl["caption"]  = caption
+        result = _run_yt_dlp_download(url, height, progress_hook=_dl_progress_hook(dl))
+        dl["tmpdir"]   = result["tmpdir"]
+        dl["path"]     = result["path"]
+        dl["filename"] = result["filename"]
+        dl["caption"]  = result["caption"]
         dl["status"]   = "done"
         dl["percent"]  = 100
     except Exception as e:
         dl["status"] = "error"
         dl["error"]  = str(e).splitlines()[0]
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        if dl.get("tmpdir"):
+            shutil.rmtree(dl["tmpdir"], ignore_errors=True)
         dl["tmpdir"] = None
     finally:
         _DL_SEM.release()
@@ -383,6 +450,111 @@ def dl_file(dl_id: str):
         download_name=dl["filename"],
         mimetype="video/mp4",
     )
+
+
+# ── Stateless internal API: extract → download+upload → cleanup ────────────
+# Used by another web app as a backend integration. No job storage — every
+# call is self-contained; the caller holds onto the returned public_ids and
+# is responsible for calling /api/cleanup once it no longer needs the asset.
+
+@app.route("/api/extract", methods=["POST"])
+def api_extract():
+    data = request.get_json(force=True) or {}
+    url  = (data.get("url") or "").strip()
+
+    if not url:
+        return jsonify({"success": False, "error": "Thiếu URL."}), 400
+    if not core.validate_url(url):
+        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok, YouTube."}), 400
+
+    try:
+        result = core.probe_one(url)
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except core.DownloadFailure as e:
+        return jsonify({"success": False, "error": str(e).splitlines()[0]}), 502
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Lỗi: {str(e)[:200]}"}), 500
+
+    return jsonify({
+        "success":    True,
+        "platform":   result["platform"],
+        "type":       "video",
+        "caption":    result["caption"],
+        "thumbnail":  result.get("thumbnail"),
+        "mediaCount": 1,
+    })
+
+
+@app.route("/api/download", methods=["POST"])
+def api_download():
+    data   = request.get_json(force=True) or {}
+    url    = (data.get("url") or "").strip()
+    height = data.get("height")
+
+    if not url:
+        return jsonify({"success": False, "error": "Thiếu URL."}), 400
+    if not core.validate_url(url):
+        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok, YouTube."}), 400
+    if height is not None:
+        try:
+            height = int(height)
+        except (ValueError, TypeError):
+            height = None
+
+    cloud_cfg = _cloudinary_config()
+    if not cloudinary_client.is_configured(cloud_cfg):
+        return jsonify({
+            "success": False,
+            "error": "Chưa cấu hình Cloudinary. Vào mục \"Cloudinary Configuration\" trên giao diện để nhập Cloud Name / API Key / API Secret.",
+        }), 400
+
+    _DL_SEM.acquire()
+    try:
+        result = _run_yt_dlp_download(url, height)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e).splitlines()[0]}), 502
+    finally:
+        _DL_SEM.release()
+
+    tmpdir = result["tmpdir"]
+    try:
+        cloudinary_client.configure(cloud_cfg)
+        folder = f"temp/{uuid.uuid4().hex[:10]}"
+        upload = cloudinary_client.upload_file(result["path"], folder=folder, resource_type="video")
+    except Exception as e:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return jsonify({"success": False, "error": f"Lỗi upload Cloudinary: {str(e)[:200]}"}), 502
+
+    shutil.rmtree(tmpdir, ignore_errors=True)
+
+    return jsonify({
+        "success": True,
+        "caption": result["caption"],
+        "type":    "video",
+        "media": [{
+            "type":      "video",
+            "url":       upload["secure_url"],
+            "public_id": upload["public_id"],
+        }],
+    })
+
+
+@app.route("/api/cleanup", methods=["POST"])
+def api_cleanup():
+    data       = request.get_json(force=True) or {}
+    public_ids = data.get("public_ids")
+
+    if not isinstance(public_ids, list) or not public_ids:
+        return jsonify({"success": False, "error": "public_ids là bắt buộc và phải là danh sách không rỗng."}), 400
+
+    cloud_cfg = _cloudinary_config()
+    if not cloudinary_client.is_configured(cloud_cfg):
+        return jsonify({"success": False, "error": "Chưa cấu hình Cloudinary."}), 400
+
+    cloudinary_client.configure(cloud_cfg)
+    deleted = cloudinary_client.delete_assets(public_ids)
+    return jsonify({"success": True, "deleted": deleted})
 
 
 if __name__ == "__main__":
