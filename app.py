@@ -473,9 +473,9 @@ def api_extract():
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except core.DownloadFailure as e:
-        return jsonify({"success": False, "error": str(e).splitlines()[0]}), 502
+        return jsonify({"success": False, "error": str(e)[:500]}), 502
     except Exception as e:
-        return jsonify({"success": False, "error": f"Lỗi: {str(e)[:200]}"}), 500
+        return jsonify({"success": False, "error": f"Lỗi: {str(e)[:500]}"}), 500
 
     return jsonify({
         "success":    True,
@@ -514,7 +514,7 @@ def api_download():
     try:
         result = _run_yt_dlp_download(url, height)
     except Exception as e:
-        return jsonify({"success": False, "error": str(e).splitlines()[0]}), 502
+        return jsonify({"success": False, "error": str(e)[:500]}), 502
     finally:
         _DL_SEM.release()
 
