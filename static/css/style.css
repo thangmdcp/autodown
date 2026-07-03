@@ -714,6 +714,108 @@ textarea:focus {
 .plat-instagram { background: #fce8f8; color: #C13584; }
 .plat-other     { background: var(--neutral-bg); color: var(--text-muted); }
 
+/* ── API docs ─────────────────────────────────────────────────────────────── */
+
+.docs-card { padding: 0; overflow: hidden; }
+
+.docs-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 24px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+.docs-summary::-webkit-details-marker { display: none; }
+.docs-summary svg { color: var(--accent-1); flex-shrink: 0; }
+
+.docs-body {
+  padding: 0 24px 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+
+.docs-intro, .docs-p {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+
+.docs-note {
+  font-size: 13px;
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin: 0 0 18px;
+  line-height: 1.55;
+}
+
+.docs-h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 24px 0 6px;
+}
+.docs-h3 code { font-size: 13px; }
+
+.docs-p code, .docs-intro code {
+  background: var(--neutral-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.docs-field { margin-bottom: 18px; }
+
+.docs-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 7px;
+}
+
+.docs-code-wrap {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.docs-code {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 14px 84px 14px 16px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+}
+
+.docs-copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255,255,255,0.1);
+  color: #e2e8f0;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms var(--ease-out);
+}
+.docs-copy-btn:hover { background: rgba(255,255,255,0.18); }
+.docs-copy-btn.copied { background: var(--success); border-color: var(--success); color: white; }
+
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 
 .footnote { display: none; }

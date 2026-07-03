@@ -58,13 +58,21 @@
     if (iconEyeOff) iconEyeOff.classList.toggle("is-hidden", !_keyVisible);
   }
 
-  fetch("/api/info").then(r => r.json()).then(d => {
+  // /api/info is the one public route (no key required) — every other /api/*
+  // call must wait for this to resolve so it can attach X-API-Key.
+  const _apiKeyReady = fetch("/api/info").then(r => r.json()).then(d => {
     _apiKey  = d.api_key  || "";
     _keyName = d.key_name || "default";
     updateKeyDisplay();
   }).catch(() => {
     if (apiKeyVal) apiKeyVal.textContent = "—";
   });
+
+  async function apiFetch(url, opts = {}) {
+    await _apiKeyReady;
+    const headers = Object.assign({}, opts.headers, { "X-API-Key": _apiKey });
+    return fetch(url, Object.assign({}, opts, { headers }));
+  }
 
   apiKeyToggle?.addEventListener("click", () => {
     _keyVisible = !_keyVisible;
@@ -105,7 +113,7 @@
     const name = (keyDialogName.value || "").trim() || "default";
     keyDialogConfirm.disabled = true;
     try {
-      const res  = await fetch("/api/regenerate_key", {
+      const res  = await apiFetch("/api/regenerate_key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -220,7 +228,7 @@
 
   async function _startAndPoll(idx) {
     const item = probeItems[idx] || {};
-    const res  = await fetch("/api/start_dl", {
+    const res  = await apiFetch("/api/start_dl", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -239,7 +247,7 @@
     return new Promise((resolve, reject) => {
       const timer = setInterval(async () => {
         try {
-          const r = await fetch(`/api/dl_status/${dlId}`);
+          const r = await apiFetch(`/api/dl_status/${dlId}`);
           const d = await r.json();
           Object.assign(rowDl[idx], d, { dlId });
           if (d.status === "done") {
@@ -268,7 +276,7 @@
     renderRow(idx);
 
     try {
-      const res = await fetch(`/api/dl_file/${dl.dlId}`);
+      const res = await apiFetch(`/api/dl_file/${dl.dlId}`);
       if (!res.ok) {
         let msg = `Server lỗi ${res.status}`;
         try { const d = await res.json(); if (d.error) msg = d.error; } catch {}
@@ -506,4 +514,18 @@
   function hideErr() { formError.classList.add("is-hidden"); formError.textContent = ""; }
   function showErr(msg) { formError.textContent = msg; formError.classList.remove("is-hidden"); }
   function esc(str) { const d = document.createElement("div"); d.textContent = str ?? ""; return d.innerHTML; }
+
+  // ── API docs: copy buttons ──────────────────────────────────────────────────
+
+  document.querySelectorAll(".docs-copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const text = btn.dataset.copy || "";
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = "Copied!";
+        btn.classList.add("copied");
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove("copied"); }, 1500);
+      });
+    });
+  });
 })();

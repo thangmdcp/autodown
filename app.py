@@ -99,10 +99,8 @@ def _check_api_key():
         request.headers.get("X-API-Key") or
         request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     )
-    # If a key is provided but wrong → reject
-    if provided and provided != API_KEY:
-        return jsonify({"error": "Invalid API key."}), 401
-    # If no key at all → allow (browser UI same-origin calls have no key)
+    if provided != API_KEY:
+        return jsonify({"error": "Thiếu hoặc sai API key. Gửi header X-API-Key: <key>."}), 401
 
 @app.route("/api/info")
 def api_info():

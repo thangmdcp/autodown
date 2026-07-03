@@ -133,6 +133,79 @@
       <p>Dán link Facebook hoặc TikTok rồi bấm <strong>Tải Xuống</strong></p>
     </section>
 
+    <details class="card docs-card" id="api-docs">
+      <summary class="docs-summary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M8 3v3m8-3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        API cho website / server khác
+      </summary>
+
+      <div class="docs-body">
+        <p class="docs-intro">
+          Web hoặc server khác có thể gọi thẳng API này để tải video — không cần dùng giao diện.
+          Dùng API key ở góc trên bên phải trang này (bấm biểu tượng mắt để xem, biểu tượng copy để sao chép).
+        </p>
+
+        <p class="docs-note">
+          Nên gọi từ <strong>backend/server</strong> của bạn, không gọi trực tiếp từ JavaScript
+          chạy trên trình duyệt người dùng cuối — key sẽ bị lộ ra source code phía client.
+        </p>
+
+        <div class="docs-field">
+          <div class="docs-label">Base URL</div>
+          <div class="docs-code-wrap">
+            <pre class="docs-code">https://autodown.vibevic.com</pre>
+            <button class="docs-copy-btn" type="button" data-copy="https://autodown.vibevic.com">Copy</button>
+          </div>
+        </div>
+
+        <div class="docs-field">
+          <div class="docs-label">Header xác thực (bắt buộc cho mọi request /api/*)</div>
+          <div class="docs-code-wrap">
+            <pre class="docs-code">X-API-Key: &lt;API_KEY_CUA_BAN&gt;</pre>
+            <button class="docs-copy-btn" type="button" data-copy="X-API-Key: &lt;API_KEY_CUA_BAN&gt;">Copy</button>
+          </div>
+        </div>
+
+        <h3 class="docs-h3">1. Bắt đầu tải — <code>POST /api/start_dl</code></h3>
+        <p class="docs-p">Body JSON: <code>url</code> (bắt buộc), <code>height</code> (tuỳ chọn, null = chất lượng cao nhất).</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">curl -X POST https://autodown.vibevic.com/api/start_dl \
+  -H "X-API-Key: &lt;API_KEY_CUA_BAN&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.facebook.com/reel/XXXXXXXXXX", "height": null}'
+
+# → {"dl_id": "a1b2c3d4e5f6"}</pre>
+          <button class="docs-copy-btn" type="button" data-copy="curl -X POST https://autodown.vibevic.com/api/start_dl -H &quot;X-API-Key: &lt;API_KEY_CUA_BAN&gt;&quot; -H &quot;Content-Type: application/json&quot; -d '{&quot;url&quot;: &quot;https://www.facebook.com/reel/XXXXXXXXXX&quot;, &quot;height&quot;: null}'">Copy</button>
+        </div>
+
+        <h3 class="docs-h3">2. Kiểm tra trạng thái — <code>GET /api/dl_status/&lt;dl_id&gt;</code></h3>
+        <p class="docs-p">Gọi lặp lại (poll) mỗi 1–2 giây cho tới khi <code>status</code> là <code>"done"</code> hoặc <code>"error"</code>.</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">curl https://autodown.vibevic.com/api/dl_status/a1b2c3d4e5f6 \
+  -H "X-API-Key: &lt;API_KEY_CUA_BAN&gt;"
+
+# → {"status": "done", "percent": 100, "filename": "caption_video.mp4", "caption": "...", "error": null}</pre>
+          <button class="docs-copy-btn" type="button" data-copy="curl https://autodown.vibevic.com/api/dl_status/a1b2c3d4e5f6 -H &quot;X-API-Key: &lt;API_KEY_CUA_BAN&gt;&quot;">Copy</button>
+        </div>
+
+        <h3 class="docs-h3">3. Tải file — <code>GET /api/dl_file/&lt;dl_id&gt;</code></h3>
+        <p class="docs-p">Chỉ gọi được sau khi <code>status</code> = <code>"done"</code>. File chỉ tồn tại trên server trong ít phút rồi bị xoá — tải về ngay khi xong.</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">curl https://autodown.vibevic.com/api/dl_file/a1b2c3d4e5f6 \
+  -H "X-API-Key: &lt;API_KEY_CUA_BAN&gt;" \
+  -o video.mp4</pre>
+          <button class="docs-copy-btn" type="button" data-copy="curl https://autodown.vibevic.com/api/dl_file/a1b2c3d4e5f6 -H &quot;X-API-Key: &lt;API_KEY_CUA_BAN&gt;&quot; -o video.mp4">Copy</button>
+        </div>
+
+        <p class="docs-note">
+          Nền tảng hỗ trợ: Facebook, TikTok, YouTube (chỉ video/reel công khai). Không hỗ trợ ảnh/album.
+          App không bao giờ dùng cookie đăng nhập cho bất kỳ nền tảng nào.
+        </p>
+      </div>
+    </details>
+
     <footer class="footnote">Chỉ dùng cho video công khai hoặc video của bạn.</footer>
   </div>
 
