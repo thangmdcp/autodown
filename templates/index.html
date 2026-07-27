@@ -204,9 +204,56 @@
         </div>
 
         <p class="docs-note">
-          Nên gọi từ <strong>backend/server</strong> của bạn, không gọi trực tiếp từ JavaScript
-          chạy trên trình duyệt người dùng cuối — key sẽ bị lộ ra source code phía client.
+          Với <strong>Next.js</strong>, hãy gọi từ Route Handler hoặc Server Action — không gọi trực tiếp từ
+          Client Component/trình duyệt người dùng cuối, vì API key sẽ bị lộ.
         </p>
+
+        <h3 class="docs-h3">Next.js — cấu hình server-side</h3>
+        <p class="docs-p">Lưu hai biến này trong <code>.env.local</code> của website Next.js. Không dùng tiền tố <code>NEXT_PUBLIC_</code>.</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">AUTODOWN_BASE_URL=https://autodown.vibevic.com
+AUTODOWN_API_KEY=&lt;API_KEY_CUA_BAN&gt;</pre>
+          <button class="docs-copy-btn" type="button" data-copy="AUTODOWN_BASE_URL=https://autodown.vibevic.com&#10;AUTODOWN_API_KEY=&lt;API_KEY_CUA_BAN&gt;">Copy</button>
+        </div>
+
+        <p class="docs-p">Tạo hàm dùng chung tại <code>lib/autodown.ts</code>:</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">export async function callAutoDown(path: string, body: unknown) {
+  const response = await fetch(`${process.env.AUTODOWN_BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": process.env.AUTODOWN_API_KEY!,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "AutoDown request failed");
+  return data;
+}</pre>
+          <button class="docs-copy-btn" type="button" data-copy="export async function callAutoDown(path: string, body: unknown) {&#10;  const response = await fetch(`${process.env.AUTODOWN_BASE_URL}${path}`, {&#10;    method: &quot;POST&quot;,&#10;    headers: {&#10;      &quot;Content-Type&quot;: &quot;application/json&quot;,&#10;      &quot;X-API-Key&quot;: process.env.AUTODOWN_API_KEY!,&#10;    },&#10;    body: JSON.stringify(body),&#10;    cache: &quot;no-store&quot;,&#10;  });&#10;&#10;  const data = await response.json();&#10;  if (!response.ok) throw new Error(data.error || &quot;AutoDown request failed&quot;);&#10;  return data;&#10;}">Copy</button>
+        </div>
+
+        <p class="docs-p">Ví dụ Route Handler tại <code>app/api/video/extract/route.ts</code>:</p>
+        <div class="docs-code-wrap">
+          <pre class="docs-code">import { NextRequest, NextResponse } from "next/server";
+import { callAutoDown } from "@/lib/autodown";
+
+export async function POST(request: NextRequest) {
+  const { url } = await request.json();
+  try {
+    return NextResponse.json(await callAutoDown("/api/extract", { url }));
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Không thể lấy video" },
+      { status: 502 },
+    );
+  }
+}</pre>
+          <button class="docs-copy-btn" type="button" data-copy="import { NextRequest, NextResponse } from &quot;next/server&quot;;&#10;import { callAutoDown } from &quot;@/lib/autodown&quot;;&#10;&#10;export async function POST(request: NextRequest) {&#10;  const { url } = await request.json();&#10;  try {&#10;    return NextResponse.json(await callAutoDown(&quot;/api/extract&quot;, { url }));&#10;  } catch (error) {&#10;    return NextResponse.json(&#10;      { error: error instanceof Error ? error.message : &quot;Không thể lấy video&quot; },&#10;      { status: 502 },&#10;    );&#10;  }&#10;}">Copy</button>
+        </div>
 
         <div class="docs-field">
           <div class="docs-label">Base URL</div>
