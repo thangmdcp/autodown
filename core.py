@@ -13,6 +13,7 @@ import re
 import unicodedata
 
 import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
 
 MAX_CAPTION_LEN = 70
 INVALID_CHARS_PATTERN = re.compile(r'[\\/:*?"<>|\n\r\t]')
@@ -106,6 +107,19 @@ def validate_url(url: str) -> bool:
     return any(d in lower for d in _SUPPORTED_DOMAINS)
 
 
+def network_options_for_url(url: str) -> dict:
+    """Return yt-dlp network options needed by the target platform.
+
+    Facebook sometimes serves a different Tahoe payload to datacenter TLS
+    fingerprints, which makes the extractor fail with "Cannot parse data".
+    Browser impersonation keeps the request fingerprint close to Chrome while
+    leaving TikTok and other extractors on yt-dlp's normal request handler.
+    """
+    if detect_platform(url) == "facebook":
+        return {"impersonate": ImpersonateTarget(client="chrome")}
+    return {}
+
+
 def friendly_error_message(err: Exception) -> str:
     msg = str(err)
     lower = msg.lower()
@@ -116,7 +130,7 @@ def friendly_error_message(err: Exception) -> str:
     if any(k in lower for k in ("unsupported url", "is not a valid url", "invalid url")):
         return f"URL không hợp lệ hoặc không được hỗ trợ.\n{msg}"
 
-    if "unable to extract" in lower or "no video formats" in lower:
+    if "unable to extract" in lower or "no video formats" in lower or "cannot parse data" in lower:
         return (
             f"Không thể lấy dữ liệu video — có thể do yt-dlp đã cũ.\n{msg}\n"
             "Gợi ý: chạy 'pip install -U yt-dlp' để cập nhật."
@@ -168,6 +182,7 @@ def probe_one(url: str) -> dict:
         "socket_timeout": 15,
         "extractor_retries": 0,
     }
+    probe_opts.update(network_options_for_url(url))
 
     try:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
@@ -257,6 +272,7 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
         on_event({"type": "probing"})
 
     probe_opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    probe_opts.update(network_options_for_url(url))
 
     try:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
@@ -294,6 +310,7 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
         "no_warnings": True,
         "noprogress": True,
     }
+    dl_opts.update(network_options_for_url(url))
 
     try:
         with yt_dlp.YoutubeDL(dl_opts) as ydl:

@@ -312,6 +312,7 @@ def _run_yt_dlp_download(url: str, height=None, progress_hook=None) -> dict:
         "retries": 3,
         "fragment_retries": 3,
     }
+    opts.update(core.network_options_for_url(url))
     if progress_hook:
         opts["progress_hooks"] = [progress_hook]
 
