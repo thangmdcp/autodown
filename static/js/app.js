@@ -465,11 +465,12 @@
     const u = (url || "").toLowerCase();
     if (u.includes("facebook.com") || u.includes("fb.watch")) return "facebook";
     if (u.includes("tiktok.com")) return "tiktok";
+    if (u.includes("instagram.com") || u.includes("instagr.am")) return "instagram";
     return "other";
   }
 
   function platformLabel(plat) {
-    const map = { facebook: "FB", tiktok: "TikTok" };
+    const map = { facebook: "FB", tiktok: "TikTok", instagram: "IG" };
     return map[plat] || plat || "?";
   }
 
@@ -633,7 +634,7 @@
   function buildApiGuideMarkdown(baseUrl, apiKey) {
     return `# AutoDown API — Hướng dẫn tích hợp
 
-Service tải video Facebook / TikTok, upload lên Cloudinary, không lưu file vĩnh viễn, không dùng cookie.
+Service tải video Facebook / TikTok / Instagram, upload lên Cloudinary, không lưu file vĩnh viễn, không dùng cookie.
 
 ## 1. Thông tin kết nối
 
@@ -693,8 +694,9 @@ export async function POST(request: NextRequest) {
 
 ## 3. Phạm vi hỗ trợ
 
-- Nền tảng: Facebook, TikTok — chỉ video/reel **công khai**.
-- Không hỗ trợ YouTube (YouTube chặn theo dải IP datacenter, không có cách vượt qua đáng tin cậy nếu không dùng cookie), không hỗ trợ Instagram, không hỗ trợ ảnh/album/carousel (các nền tảng này bắt buộc cookie đăng nhập mới lấy được, vi phạm nguyên tắc không-cookie của service).
+- Nền tảng: Facebook, TikTok và Instagram — chỉ video/reel **công khai**.
+- Instagram đang ở mức **thử nghiệm**: một số link có thể bị yêu cầu đăng nhập hoặc chặn IP Render; không hỗ trợ nội dung riêng tư.
+- Không hỗ trợ YouTube, ảnh/album/carousel. Service không dùng cookie đăng nhập.
 - Service **không lưu job/state** — mỗi request tự chứa toàn bộ thông tin, không có jobId.
 
 ## 4. Endpoints

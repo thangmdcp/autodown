@@ -1,7 +1,7 @@
 """
 core.py
 
-Shared Facebook video/reel download logic used by both the CLI
+Shared public video/reel download logic used by both the CLI
 (fb_downloader.py) and the web app (app.py). Uses the yt-dlp Python API
 directly — no subprocess.
 
@@ -11,6 +11,7 @@ Only intended for public videos or videos the user owns.
 import os
 import re
 import unicodedata
+from urllib.parse import urlparse
 
 import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
@@ -22,6 +23,7 @@ URL_PATTERN = re.compile(r'https?://\S+')
 _SUPPORTED_DOMAINS = (
     "facebook.com", "fb.watch",
     "tiktok.com", "vm.tiktok.com",
+    "instagram.com", "instagr.am",
 )
 
 def _label_for_height(h: int) -> str:
@@ -89,12 +91,22 @@ def unique_path(directory: str, base_name: str, ext: str) -> str:
 
 
 def detect_platform(url: str) -> str:
-    u = url.lower()
-    if "facebook.com" in u or "fb.watch" in u:
+    try:
+        host = (urlparse(url.strip()).hostname or "").lower().rstrip(".")
+    except (AttributeError, ValueError):
+        return "other"
+    if _host_matches(host, "facebook.com") or _host_matches(host, "fb.watch"):
         return "facebook"
-    if "tiktok.com" in u:
+    if _host_matches(host, "tiktok.com"):
         return "tiktok"
+    if _host_matches(host, "instagram.com") or _host_matches(host, "instagr.am"):
+        return "instagram"
     return "other"
+
+
+def _host_matches(host: str, domain: str) -> bool:
+    """Match an exact hostname or a real subdomain, never lookalike domains."""
+    return host == domain or host.endswith("." + domain)
 
 
 def validate_url(url: str) -> bool:
@@ -103,8 +115,12 @@ def validate_url(url: str) -> bool:
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return False
-    lower = url.lower()
-    return any(d in lower for d in _SUPPORTED_DOMAINS)
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return any(_host_matches(host, domain) for domain in _SUPPORTED_DOMAINS)
 
 
 def network_options_for_url(url: str) -> dict:
@@ -112,10 +128,12 @@ def network_options_for_url(url: str) -> dict:
 
     Facebook sometimes serves a different Tahoe payload to datacenter TLS
     fingerprints, which makes the extractor fail with "Cannot parse data".
-    Browser impersonation keeps the request fingerprint close to Chrome while
-    leaving TikTok and other extractors on yt-dlp's normal request handler.
+    Browser impersonation keeps the request fingerprint close to Chrome.
+    Instagram public posts also benefit from this, although Instagram may still
+    require login or block datacenter IPs. TikTok stays on yt-dlp's normal
+    request handler.
     """
-    if detect_platform(url) == "facebook":
+    if detect_platform(url) in {"facebook", "instagram"}:
         return {"impersonate": ImpersonateTarget(client="chrome")}
     return {}
 
@@ -172,7 +190,7 @@ def probe_one(url: str) -> dict:
     if not validate_url(url):
         raise ValueError(
             f"URL không được hỗ trợ: {url!r}\n"
-            "Hỗ trợ: Facebook, TikTok."
+            "Hỗ trợ: Facebook, TikTok, Instagram (thử nghiệm)."
         )
 
     probe_opts = {
@@ -253,7 +271,7 @@ def probe_one(url: str) -> dict:
 
 
 def download_one(url: str, output_dir: str, on_event=None) -> dict:
-    """Download a single Facebook video.
+    """Download a single supported public video.
 
     on_event(event) callbacks:
       {"type": "probing"}
@@ -264,7 +282,10 @@ def download_one(url: str, output_dir: str, on_event=None) -> dict:
     Raises ValueError for bad URL, DownloadFailure for everything else.
     """
     if not validate_url(url):
-        raise ValueError(f"URL không hợp lệ: {url!r} (cần là link facebook.com hoặc fb.watch)")
+        raise ValueError(
+            f"URL không hợp lệ: {url!r} "
+            "(hỗ trợ Facebook, TikTok, Instagram thử nghiệm)"
+        )
 
     os.makedirs(output_dir, exist_ok=True)
 

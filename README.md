@@ -1,6 +1,6 @@
 # FB Downloader
 
-Web app chạy trên **localhost** để tải video/reel Facebook (công khai hoặc của chính bạn) và tự động đặt tên file theo caption của bài đăng. Có giao diện trực quan: nhập link, xem tiến trình tải theo thời gian thực, và bảng trạng thái (caption, % tải, thành công/thất bại, link tải file). Không hỗ trợ bypass đăng nhập/CAPTCHA.
+Web app tải video/reel công khai từ Facebook, TikTok và Instagram, đồng thời tự động đặt tên file theo caption của bài đăng. Instagram đang ở mức thử nghiệm vì có thể yêu cầu đăng nhập hoặc chặn IP datacenter. Không hỗ trợ bypass đăng nhập/CAPTCHA.
 
 ## Cách dễ nhất: double-click để chạy (macOS)
 

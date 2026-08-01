@@ -466,7 +466,7 @@ def api_extract():
     if not url:
         return jsonify({"success": False, "error": "Thiếu URL."}), 400
     if not core.validate_url(url):
-        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok."}), 400
+        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Hỗ trợ Facebook, TikTok và Instagram (thử nghiệm)."}), 400
 
     try:
         result = core.probe_one(url)
@@ -496,7 +496,7 @@ def api_download():
     if not url:
         return jsonify({"success": False, "error": "Thiếu URL."}), 400
     if not core.validate_url(url):
-        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Chỉ hỗ trợ Facebook, TikTok."}), 400
+        return jsonify({"success": False, "error": "URL không hợp lệ hoặc không được hỗ trợ. Hỗ trợ Facebook, TikTok và Instagram (thử nghiệm)."}), 400
     if height is not None:
         try:
             height = int(height)
