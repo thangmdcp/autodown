@@ -644,6 +644,19 @@ Service tải video Facebook / TikTok / Instagram, upload lên Cloudinary, khôn
   X-API-Key: ${apiKey}
   \`\`\`
 
+### Cách lấy API key hiện tại
+
+1. Mở trang AutoDown: \`${baseUrl}\`.
+2. Bấm biểu tượng **bánh răng** ở góc trên bên phải để hiện phần API.
+3. Bấm biểu tượng **mắt** để xem key, sau đó bấm biểu tượng **copy**.
+4. Dán key vào biến môi trường \`AUTODOWN_API_KEY\` của web gọi API.
+
+Key hiện trên trang là key đang hoạt động. Với bản chạy trên Render, nguồn key
+chính là biến môi trường \`API_KEY\` trong **Render → AutoDown → Environment**.
+Muốn đổi key vĩnh viễn, hãy sửa \`API_KEY\` tại Render rồi redeploy; sau đó cập
+nhật \`AUTODOWN_API_KEY\` ở web bên kia và deploy lại web đó. Không dùng nút
+**Tạo key mới** để đổi key production vì giá trị đó có thể mất khi Render restart.
+
 ## 2. Next.js — cách gọi an toàn
 
 Thêm vào \`.env.local\` của dự án Next.js (không dùng tiền tố \`NEXT_PUBLIC_\`):
@@ -652,6 +665,11 @@ Thêm vào \`.env.local\` của dự án Next.js (không dùng tiền tố \`NEX
 AUTODOWN_BASE_URL=${baseUrl}
 AUTODOWN_API_KEY=${apiKey}
 \`\`\`
+
+Khi deploy Next.js lên Vercel/Render/Cloudflare, tạo đúng hai biến môi trường
+\`AUTODOWN_BASE_URL\` và \`AUTODOWN_API_KEY\` trong phần Settings của nền tảng đó.
+Chỉ gọi AutoDown từ **Route Handler / Server Action / backend**; không gửi key
+xuống component client hoặc mã JavaScript chạy trong trình duyệt.
 
 Tạo \`lib/autodown.ts\`:
 
@@ -707,12 +725,12 @@ export async function POST(request: NextRequest) {
 curl -X POST ${baseUrl}/api/extract \\
   -H "X-API-Key: ${apiKey}" \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://www.facebook.com/reel/XXXXXXXXXX"}'
+  -d '{"url": "https://www.instagram.com/reel/XXXXXXXXXX/"}'
 \`\`\`
 
 Response:
 \`\`\`json
-{"success": true, "platform": "facebook", "type": "video", "caption": "...", "thumbnail": "...", "mediaCount": 1}
+{"success": true, "platform": "instagram", "type": "video", "caption": "...", "thumbnail": "...", "mediaCount": 1}
 \`\`\`
 
 ### \`POST /api/download\` — tải video + upload Cloudinary + xoá file tạm (1 lần gọi)
@@ -723,7 +741,7 @@ Cần cấu hình Cloudinary trên server AutoDown trước (mục "Cloudinary C
 curl -X POST ${baseUrl}/api/download \\
   -H "X-API-Key: ${apiKey}" \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://www.facebook.com/reel/XXXXXXXXXX"}'
+  -d '{"url": "https://www.instagram.com/reel/XXXXXXXXXX/"}'
 \`\`\`
 
 Response:
