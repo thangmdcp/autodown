@@ -163,6 +163,49 @@ class DownloadFailure(RuntimeError):
         self.caption = caption
 
 
+def classify_download_error(err: Exception) -> dict:
+    """Convert yt-dlp/network failures into a stable, non-sensitive API error."""
+    message = str(err)
+    lower = message.lower()
+
+    if "cannot parse data" in lower or "unable to extract" in lower or "no video formats" in lower:
+        return {
+            "code": "FACEBOOK_PARSE_FAILED",
+            "message": "AutoDown không thể đọc dữ liệu video từ Facebook.",
+            "retryable": False,
+            "http_status": 422,
+        }
+    if "log in" in lower or "login" in lower:
+        return {
+            "code": "LOGIN_REQUIRED",
+            "message": "Video yêu cầu đăng nhập Facebook.",
+            "retryable": False,
+            "http_status": 422,
+        }
+    if any(token in lower for token in ("private", "not available", "removed", "permission")):
+        return {
+            "code": "PRIVATE_OR_REMOVED",
+            "message": "Video riêng tư, đã bị gỡ hoặc không còn truy cập được.",
+            "retryable": False,
+            "http_status": 422,
+        }
+    if any(token in lower for token in ("timed out", "timeout", "temporarily unavailable", "connection reset")):
+        return {
+            "code": "UPSTREAM_TIMEOUT",
+            "message": "Facebook tạm thời không phản hồi AutoDown.",
+            "retryable": True,
+            "http_status": 503,
+            "retry_after_seconds": 30,
+        }
+    return {
+        "code": "DOWNLOAD_FAILED",
+        "message": "AutoDown không thể tải video ở thời điểm này.",
+        "retryable": True,
+        "http_status": 502,
+        "retry_after_seconds": 30,
+    }
+
+
 def _make_progress_hook(on_event):
     def hook(d):
         if on_event is None:

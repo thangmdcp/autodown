@@ -5,6 +5,7 @@ Two-phase flow: probe (caption only) → per-item download → stream to browser
 """
 
 import concurrent.futures
+import hashlib
 import json
 import os
 import secrets
@@ -116,7 +117,12 @@ def _check_api_key():
         request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     )
     if provided != API_KEY:
-        return jsonify({"error": "Thiếu hoặc sai API key. Gửi header X-API-Key: <key>."}), 401
+        return jsonify({
+            "success": False,
+            "code": "AUTH_FAILED",
+            "error": "Thiếu hoặc sai API key.",
+            "retryable": False,
+        }), 401
 
 @app.route("/api/info")
 def api_info():
@@ -127,6 +133,23 @@ def api_info():
         "key_name": _config.get("key_name", "default"),
         "base_url": base,
         "auth":     "X-API-Key: <api_key>",
+    })
+
+
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    with _DOWNLOAD_STATE_LOCK:
+        active = _ACTIVE_DOWNLOADS
+        waiting = _WAITING_DOWNLOADS
+        cached = len(_DOWNLOAD_CACHE)
+    return jsonify({
+        "success": True,
+        "ytDlpVersion": yt_dlp.version.__version__,
+        "cloudinaryReady": cloudinary_client.is_configured(_cloudinary_config()),
+        "activeDownloads": active,
+        "waitingDownloads": waiting,
+        "maxConcurrentDownloads": 1,
+        "cachedDownloads": cached,
     })
 
 
@@ -184,6 +207,55 @@ PROBES: dict = {}
 DOWNLOADS: dict = {}
 # 1 concurrent yt-dlp download — client processes links serially so this is the natural limit
 _DL_SEM = threading.Semaphore(1)
+_DOWNLOAD_STATE_LOCK = threading.Lock()
+_ACTIVE_DOWNLOADS = 0
+_WAITING_DOWNLOADS = 0
+_DOWNLOAD_CACHE: dict[str, dict] = {}
+_DOWNLOAD_CACHE_TTL = 60 * 60
+
+
+def _download_cache_key(url: str, height) -> str:
+    return hashlib.sha256(f"{url}|{height or 'best'}".encode("utf-8")).hexdigest()
+
+
+def _cached_download(key: str) -> dict | None:
+    now = time.time()
+    with _DOWNLOAD_STATE_LOCK:
+        entry = _DOWNLOAD_CACHE.get(key)
+        if not entry:
+            return None
+        if entry["expires_at"] <= now:
+            _DOWNLOAD_CACHE.pop(key, None)
+            return None
+        return entry["payload"]
+
+
+def _store_download_cache(key: str, payload: dict):
+    with _DOWNLOAD_STATE_LOCK:
+        _DOWNLOAD_CACHE[key] = {"payload": payload, "expires_at": time.time() + _DOWNLOAD_CACHE_TTL}
+
+
+def _evict_cached_public_ids(public_ids: list[str]):
+    targets = set(public_ids)
+    with _DOWNLOAD_STATE_LOCK:
+        stale = [
+            key for key, entry in _DOWNLOAD_CACHE.items()
+            if any(media.get("public_id") in targets for media in entry["payload"].get("media", []))
+        ]
+        for key in stale:
+            _DOWNLOAD_CACHE.pop(key, None)
+
+
+def _structured_error(classified: dict):
+    payload = {
+        "success": False,
+        "code": classified["code"],
+        "error": classified["message"],
+        "retryable": classified["retryable"],
+    }
+    if classified.get("retry_after_seconds"):
+        payload["retryAfterSeconds"] = classified["retry_after_seconds"]
+    return jsonify(payload), classified["http_status"]
 
 
 # ── Probe phase ────────────────────────────────────────────────────────────────
@@ -316,8 +388,12 @@ def _run_yt_dlp_download(url: str, height=None, progress_hook=None) -> dict:
     if progress_hook:
         opts["progress_hooks"] = [progress_hook]
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except Exception:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise
 
     # Get filepath from yt-dlp info (most reliable)
     src = None
@@ -336,23 +412,28 @@ def _run_yt_dlp_download(url: str, height=None, progress_hook=None) -> dict:
             reverse=True,
         )
         if not candidates:
+            shutil.rmtree(tmpdir, ignore_errors=True)
             raise RuntimeError("Tải xong nhưng không tìm thấy file.")
         src = os.path.join(tmpdir, candidates[0])
 
     if not os.path.exists(src):
+        shutil.rmtree(tmpdir, ignore_errors=True)
         raise RuntimeError(f"File không tồn tại: {os.path.basename(src)}")
 
     caption = ""
     video_id = ""
+    thumbnail = None
     if info:
         caption  = info.get("description") or info.get("title") or ""
         video_id = info.get("id") or ""
+        thumbnail = info.get("thumbnail")
 
     return {
         "path":     src,
         "filename": core.sanitize_filename(caption, video_id) + ".mp4",
         "caption":  caption,
         "video_id": video_id,
+        "thumbnail": thumbnail,
         "tmpdir":   tmpdir,
     }
 
@@ -473,9 +554,9 @@ def api_extract():
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except core.DownloadFailure as e:
-        return jsonify({"success": False, "error": str(e)[:500]}), 502
+        return _structured_error(core.classify_download_error(e))
     except Exception as e:
-        return jsonify({"success": False, "error": f"Lỗi: {str(e)[:500]}"}), 500
+        return _structured_error(core.classify_download_error(e))
 
     return jsonify({
         "success":    True,
@@ -489,6 +570,7 @@ def api_extract():
 
 @app.route("/api/download", methods=["POST"])
 def api_download():
+    global _ACTIVE_DOWNLOADS, _WAITING_DOWNLOADS
     data   = request.get_json(force=True) or {}
     url    = (data.get("url") or "").strip()
     height = data.get("height")
@@ -507,15 +589,29 @@ def api_download():
     if not cloudinary_client.is_configured(cloud_cfg):
         return jsonify({
             "success": False,
-            "error": "Chưa cấu hình Cloudinary. Vào mục \"Cloudinary Configuration\" trên giao diện để nhập Cloud Name / API Key / API Secret.",
+            "code": "CLOUDINARY_FAILED",
+            "error": "AutoDown chưa được cấu hình Cloudinary.",
+            "retryable": False,
         }), 400
 
+    cache_key = _download_cache_key(url, height)
+    cached = _cached_download(cache_key)
+    if cached:
+        return jsonify({**cached, "cached": True})
+
+    with _DOWNLOAD_STATE_LOCK:
+        _WAITING_DOWNLOADS += 1
     _DL_SEM.acquire()
+    with _DOWNLOAD_STATE_LOCK:
+        _WAITING_DOWNLOADS -= 1
+        _ACTIVE_DOWNLOADS += 1
     try:
         result = _run_yt_dlp_download(url, height)
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)[:500]}), 502
+        return _structured_error(core.classify_download_error(e))
     finally:
+        with _DOWNLOAD_STATE_LOCK:
+            _ACTIVE_DOWNLOADS -= 1
         _DL_SEM.release()
 
     tmpdir = result["tmpdir"]
@@ -525,20 +621,29 @@ def api_download():
         upload = cloudinary_client.upload_file(result["path"], folder=folder, resource_type="video")
     except Exception as e:
         shutil.rmtree(tmpdir, ignore_errors=True)
-        return jsonify({"success": False, "error": f"Lỗi upload Cloudinary: {str(e)[:200]}"}), 502
+        return _structured_error({
+            "code": "CLOUDINARY_FAILED",
+            "message": "AutoDown không thể lưu video lên Cloudinary.",
+            "retryable": True,
+            "http_status": 502,
+            "retry_after_seconds": 60,
+        })
 
     shutil.rmtree(tmpdir, ignore_errors=True)
 
-    return jsonify({
+    payload = {
         "success": True,
         "caption": result["caption"],
         "type":    "video",
+        "thumbnail": result.get("thumbnail"),
         "media": [{
             "type":      "video",
             "url":       upload["secure_url"],
             "public_id": upload["public_id"],
         }],
-    })
+    }
+    _store_download_cache(cache_key, payload)
+    return jsonify(payload)
 
 
 @app.route("/api/cleanup", methods=["POST"])
@@ -555,6 +660,7 @@ def api_cleanup():
 
     cloudinary_client.configure(cloud_cfg)
     deleted = cloudinary_client.delete_assets(public_ids)
+    _evict_cached_public_ids(public_ids)
     return jsonify({"success": True, "deleted": deleted})
 
 
