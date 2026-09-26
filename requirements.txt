@@ -1,4 +1,4 @@
-yt-dlp[default,curl-cffi]==2026.9.16.232951
+yt-dlp[default,curl-cffi]==2026.9.16.232951.dev0
 flask>=3.0.0
 gunicorn>=21.0.0
 cloudinary>=1.36.0
