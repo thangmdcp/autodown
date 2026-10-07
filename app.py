@@ -15,6 +15,10 @@ import threading
 import time
 import uuid
 import webbrowser
+import subprocess
+import sys
+from urllib.parse import urlparse
+import gallery_photos
 
 import yt_dlp
 from flask import Flask, abort, after_this_request, jsonify, render_template, request, send_file
@@ -145,6 +149,9 @@ def api_health():
     return jsonify({
         "success": True,
         "ytDlpVersion": yt_dlp.version.__version__,
+        "galleryDlVersion": gallery_photos.VERSION,
+        "activePhotoDownloads": _ACTIVE_PHOTOS,
+        "maxConcurrentPhotoDownloads": 2,
         "cloudinaryReady": cloudinary_client.is_configured(_cloudinary_config()),
         "activeDownloads": active,
         "waitingDownloads": waiting,
@@ -212,10 +219,40 @@ _ACTIVE_DOWNLOADS = 0
 _WAITING_DOWNLOADS = 0
 _DOWNLOAD_CACHE: dict[str, dict] = {}
 _DOWNLOAD_CACHE_TTL = 60 * 60
+_PHOTO_SEM = threading.Semaphore(2)
+_ACTIVE_PHOTOS = 0
+
+
+def _photo_candidate(url):
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return (host == "facebook.com" or host.endswith(".facebook.com")) and not any(
+        part in parsed.path for part in ("/reel/", "/reels/", "/videos/", "/watch")
+    ) and ("/posts/" in parsed.path or "permalink" in parsed.path or "/photo" in parsed.path or "/media/set" in parsed.path)
+
+
+def _download_photos(url, cfg):
+    global _ACTIVE_PHOTOS
+    if not _PHOTO_SEM.acquire(blocking=False):
+        return {"success": False, "code": "GALLERY_BUSY", "retryable": True, "http_status": 503}
+    with _DOWNLOAD_STATE_LOCK:
+        _ACTIVE_PHOTOS += 1
+    try:
+        result = subprocess.run([sys.executable, os.path.join(BASE_DIR, "gallery_photos.py")],
+            input=json.dumps({"url": url, "cloudinary": cfg}), capture_output=True, text=True, timeout=60)
+        return json.loads(result.stdout)
+    except subprocess.TimeoutExpired:
+        return {"success": False, "code": "UPSTREAM_TIMEOUT", "retryable": True, "http_status": 504}
+    except Exception:
+        return {"success": False, "code": "GALLERY_DOWNLOAD_FAILED", "retryable": True, "http_status": 502}
+    finally:
+        with _DOWNLOAD_STATE_LOCK:
+            _ACTIVE_PHOTOS -= 1
+        _PHOTO_SEM.release()
 
 
 def _download_cache_key(url: str, height) -> str:
-    return hashlib.sha256(f"{url}|{height or 'best'}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{url}|{height or 'best'}|{gallery_photos.VERSION}".encode("utf-8")).hexdigest()
 
 
 def _cached_download(key: str) -> dict | None:
@@ -227,7 +264,16 @@ def _cached_download(key: str) -> dict | None:
         if entry["expires_at"] <= now:
             _DOWNLOAD_CACHE.pop(key, None)
             return None
-        return entry["payload"]
+        payload = entry["payload"]
+    if payload.get("extractor") == "gallery-dl":
+        # A cached extraction cannot outlive assets deleted by PostFlow cleanup.
+        import requests
+        try:
+            if not all(requests.head(m["url"], timeout=5).status_code == 200 for m in payload["media"]):
+                return None
+        except Exception:
+            return None
+    return payload
 
 
 def _store_download_cache(key: str, payload: dict):
@@ -599,6 +645,14 @@ def api_download():
     if cached:
         return jsonify({**cached, "cached": True})
 
+    if _photo_candidate(url):
+        payload = _download_photos(url, cloud_cfg)
+        if payload.get("success"):
+            _store_download_cache(cache_key, payload)
+            return jsonify(payload)
+        if payload.get("code") not in ("GALLERY_UNSUPPORTED", "GALLERY_VIDEO_SOURCE"):
+            return _structured_error({**payload, "message": "AutoDown không lấy được ảnh Facebook: " + payload["code"]})
+
     with _DOWNLOAD_STATE_LOCK:
         _WAITING_DOWNLOADS += 1
     _DL_SEM.acquire()
@@ -633,6 +687,7 @@ def api_download():
 
     payload = {
         "success": True,
+        "extractor": "yt-dlp",
         "caption": result["caption"],
         "type":    "video",
         "thumbnail": result.get("thumbnail"),
