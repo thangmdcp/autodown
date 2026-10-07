@@ -268,11 +268,16 @@ def _cached_download(key: str) -> dict | None:
     if payload.get("extractor") == "gallery-dl":
         # A cached extraction cannot outlive assets deleted by PostFlow cleanup.
         import requests
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         try:
-            if not all(requests.head(m["url"], timeout=5).status_code == 200 for m in payload["media"]):
-                return None
+            futures = [executor.submit(requests.head, m["url"], timeout=2) for m in payload["media"]]
+            for future in concurrent.futures.as_completed(futures, timeout=10):
+                if future.result().status_code != 200:
+                    return None
         except Exception:
             return None
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
     return payload
 
 

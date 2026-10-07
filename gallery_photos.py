@@ -110,6 +110,8 @@ if __name__ == "__main__":
         payload = {"success": False, "code": error.code, "retryable": error.retryable, "http_status": error.status}
     except subprocess.TimeoutExpired:
         payload = {"success": False, "code": "UPSTREAM_TIMEOUT", "retryable": True, "http_status": 504}
+    except cloudinary.exceptions.Error:
+        payload = {"success": False, "code": "CLOUDINARY_FAILED", "retryable": True, "http_status": 502}
     except Exception:
         payload = {"success": False, "code": "GALLERY_DOWNLOAD_FAILED", "retryable": True, "http_status": 502}
     print(json.dumps(payload))
