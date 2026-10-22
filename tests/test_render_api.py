@@ -12,6 +12,9 @@ class RenderTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {'API_KEY': 'test-secret'})
         self.env.start()
         self.addCleanup(self.env.stop)
+        self.resource = patch.object(render_api, 'resources', return_value=None)
+        self.resource.start()
+        self.addCleanup(self.resource.stop)
         self.client = render_api.app.test_client()
         self.headers = {'X-API-Key': 'test-secret'}
         self.body = {'url': 'https://www.facebook.com/reel/123456789', 'requestId': 'post12345678'}
@@ -34,6 +37,7 @@ class RenderTests(unittest.TestCase):
 
     def test_busy_does_not_wait_or_start_process(self):
         render_api._slot.acquire()
+        render_api._slot.acquire()
         try:
             with patch.object(render_api.subprocess, 'Popen') as process:
                 response = self.client.post('/api/download', headers=self.headers, json=self.body)
@@ -42,6 +46,45 @@ class RenderTests(unittest.TestCase):
                 process.assert_not_called()
         finally:
             render_api._slot.release()
+            render_api._slot.release()
+
+    def test_capacity_is_authenticated_and_reports_two_slots(self):
+        self.assertEqual(self.client.get('/api/health').status_code, 401)
+        health = self.client.get('/api/health', headers=self.headers).get_json()
+        self.assertEqual(health['maxConcurrentDownloads'], 2)
+        self.assertEqual(health['availableSlots'], 2)
+
+    def test_low_resources_wait_without_starting_child(self):
+        with patch.object(render_api, 'resources', return_value='RAM thấp'), patch.object(render_api.subprocess, 'Popen') as process:
+            response = self.client.post('/api/download', headers=self.headers, json=self.body)
+            self.assertEqual(response.get_json()['code'], 'MEDIA_BUSY')
+            process.assert_not_called()
+            self.assertEqual(render_api._active, 0)
+
+    def test_two_concurrent_children_and_third_waits(self):
+        import threading
+        entered = threading.Barrier(3)
+        release = threading.Event()
+        def communicate(*args, **kwargs):
+            entered.wait(timeout=5)
+            release.wait(timeout=5)
+            return json.dumps({'success': True}), ''
+        child = MagicMock()
+        child.communicate.side_effect = communicate
+        results = []
+        def run():
+            with render_api.app.test_client() as client:
+                results.append(client.post('/api/download', headers=self.headers, json=self.body).status_code)
+        with patch.object(render_api.subprocess, 'Popen', return_value=child):
+            threads = [threading.Thread(target=run) for _ in range(2)]
+            for thread in threads: thread.start()
+            entered.wait(timeout=5)
+            self.assertEqual(render_api._active, 2)
+            self.assertEqual(self.client.post('/api/download', headers=self.headers, json=self.body).status_code, 503)
+            release.set()
+            for thread in threads: thread.join(timeout=5)
+        self.assertEqual(results, [200, 200])
+        self.assertEqual(render_api._active, 0)
 
     def test_child_payload_and_cleanup(self):
         child = MagicMock()

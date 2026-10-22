@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import shutil
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -18,7 +19,10 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 8192
-_slot = threading.BoundedSemaphore(1)
+_slot = threading.BoundedSemaphore(2)
+_state_lock = threading.Lock()
+_active = 0
+_resource_pause_until = 0
 MAX_BYTES = 100 * 1024 * 1024
 
 
@@ -38,7 +42,7 @@ def authenticate():
     key = os.environ.get('API_KEY', '')
     if not key or not hmac.compare_digest(request.headers.get('X-API-Key', ''), key):
         return jsonify(success=False, code='UNAUTHORIZED'), 401
-    if request.path != '/api/download':
+    if request.path not in ('/api/download', '/api/health'):
         return jsonify(success=False, code='NOT_FOUND'), 404
 
 
@@ -47,8 +51,51 @@ def health():
     return jsonify(ok=True)
 
 
+def resources():
+    memory = None
+    try:
+        limit = Path('/sys/fs/cgroup/memory.max').read_text().strip()
+        used = int(Path('/sys/fs/cgroup/memory.current').read_text().strip())
+        if limit != 'max':
+            memory = max(0, int(limit) - used)
+    except (OSError, ValueError):
+        pass
+    if memory is None:
+        try:
+            limit = int(Path('/sys/fs/cgroup/memory/memory.limit_in_bytes').read_text().strip())
+            used = int(Path('/sys/fs/cgroup/memory/memory.usage_in_bytes').read_text().strip())
+            memory = max(0, limit - used)
+        except (OSError, ValueError):
+            pass
+    if memory is None:
+        try:
+            with open('/proc/meminfo') as handle:
+                for line in handle:
+                    if line.startswith('MemAvailable:'):
+                        memory = int(line.split()[1]) * 1024
+                        break
+        except (OSError, ValueError):
+            pass
+    try:
+        disk = shutil.disk_usage(tempfile.gettempdir()).free
+    except OSError:
+        disk = 0
+    reason = 'RAM thấp · đang chờ tài nguyên' if memory is None or memory < 160 * 1024 * 1024 else 'Đĩa tạm thấp · đang chờ tài nguyên' if disk < 200 * 1024 * 1024 else None
+    return reason
+
+
+@app.get('/api/health')
+def capacity():
+    with _state_lock:
+        reason = resources()
+        return jsonify(success=True, maxConcurrentDownloads=2, activeDownloads=_active,
+                       availableSlots=0 if reason else max(0, 2 - _active), pauseReason=reason,
+                       resourcePausedUntil=_resource_pause_until)
+
+
 @app.post('/api/download')
 def download():
+    global _active, _resource_pause_until
     data = request.get_json(silent=True) or {}
     url, request_id = data.get('url'), data.get('requestId')
     if not isinstance(url, str) or not valid_source(url) or not isinstance(request_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{8,100}', request_id):
@@ -57,9 +104,20 @@ def download():
         response = jsonify(success=False, code='MEDIA_BUSY')
         response.headers['Retry-After'] = '10'
         return response, 503
-    directory = tempfile.mkdtemp(prefix='render-download-')
+    with _state_lock:
+        reason = resources()
+        if reason:
+            _resource_pause_until = time.time() + 10
+            _slot.release()
+            response = jsonify(success=False, code='MEDIA_BUSY', reason=reason)
+            response.headers['Retry-After'] = '10'
+            return response, 503
+        _active += 1
+        _resource_pause_until = 0
+    directory = None
     process = None
     try:
+        directory = tempfile.mkdtemp(prefix='render-download-')
         process = subprocess.Popen([sys.executable, __file__, '--child', directory], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, start_new_session=True)
         output, _ = process.communicate(json.dumps({'url': url, 'requestId': request_id}), timeout=270)
         result = json.loads(output)
@@ -72,7 +130,10 @@ def download():
         app.logger.warning('Render child did not return a valid structured result')
         return jsonify(success=False, code='DOWNLOAD_FAILED'), 502
     finally:
-        shutil.rmtree(directory, ignore_errors=True)
+        if directory:
+            shutil.rmtree(directory, ignore_errors=True)
+        with _state_lock:
+            _active -= 1
         _slot.release()
 
 
