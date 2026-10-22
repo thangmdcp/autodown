@@ -104,6 +104,8 @@ def run_child(data, directory):
         info = ydl.extract_info(data['url'], download=True)
     if not info or info.get('_type') in ('playlist', 'multi_video'):
         return {'success': False, 'code': 'INVALID_MEDIA', 'httpStatus': 422}
+    if (info.get('filesize') or info.get('filesize_approx') or 0) > MAX_BYTES:
+        return {'success': False, 'code': 'MEDIA_TOO_LARGE', 'httpStatus': 413}
     files = [p for p in Path(directory).iterdir() if p.is_file() and not p.name.endswith(('.part', '.ytdl'))]
     if not files:
         return {'success': False, 'code': 'MEDIA_UNAVAILABLE', 'httpStatus': 502}
