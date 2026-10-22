@@ -1,5 +1,6 @@
 """Minimal production API. No local UI, cookie configuration or key disclosure."""
 import hashlib
+import contextlib
 import hmac
 import json
 import os
@@ -68,6 +69,7 @@ def download():
         process.communicate()
         return jsonify(success=False, code='UPSTREAM_TIMEOUT'), 504
     except Exception:
+        app.logger.warning('Render child did not return a valid structured result')
         return jsonify(success=False, code='DOWNLOAD_FAILED'), 502
     finally:
         shutil.rmtree(directory, ignore_errors=True)
@@ -122,7 +124,10 @@ def result(asset, caption):
 
 if __name__ == '__main__' and '--child' in sys.argv:
     try:
-        payload = run_child(json.loads(sys.stdin.read()), sys.argv[-1])
+        # Extractors occasionally print warnings even in quiet mode. Keep the
+        # stdout pipe exclusively JSON so a successful upload isn't lost.
+        with contextlib.redirect_stdout(sys.stderr):
+            payload = run_child(json.loads(sys.stdin.read()), sys.argv[-1])
     except Exception as error:
         import cloudinary.exceptions
         text = str(error).lower()
