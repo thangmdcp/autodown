@@ -42,8 +42,33 @@ def authenticate():
     key = os.environ.get('API_KEY', '')
     if not key or not hmac.compare_digest(request.headers.get('X-API-Key', ''), key):
         return jsonify(success=False, code='UNAUTHORIZED'), 401
-    if request.path not in ('/api/download', '/api/health'):
+    if request.path not in ('/api/download', '/api/health', '/api/storage-check'):
         return jsonify(success=False, code='NOT_FOUND'), 404
+
+
+def cloud_credentials(cloud=None):
+    legacy = os.environ.get('CLOUDINARY_CLOUD_NAME', '')
+    target = cloud if cloud is not None else legacy
+    if not isinstance(target, str) or not re.fullmatch(r'[a-z0-9_-]{1,100}', target):
+        raise ValueError('INVALID_STORAGE_ACCOUNT')
+    if target == legacy:
+        return dict(cloud_name=legacy, api_key=os.environ.get('CLOUDINARY_API_KEY'), api_secret=os.environ.get('CLOUDINARY_API_SECRET'))
+    accounts = json.loads(os.environ.get('CLOUDINARY_ACCOUNTS_JSON', '{}'))
+    cfg = accounts.get(target)
+    if not isinstance(cfg, dict) or not cfg.get('api_key') or not cfg.get('api_secret'):
+        raise ValueError('STORAGE_NOT_CONFIGURED')
+    return dict(cloud_name=target, api_key=cfg['api_key'], api_secret=cfg['api_secret'])
+
+
+@app.post('/api/storage-check')
+def storage_check():
+    import cloudinary.api
+    try:
+        cfg = cloud_credentials((request.get_json(silent=True) or {}).get('storageCloud'))
+        cloudinary.api.ping(**cfg, timeout=15)
+        return jsonify(storageRoutingVersion=1, cloud=cfg['cloud_name'], verified=True)
+    except Exception:
+        return jsonify(success=False, code='STORAGE_NOT_CONFIGURED'), 503
 
 
 @app.get('/healthz')
@@ -100,6 +125,10 @@ def download():
     url, request_id = data.get('url'), data.get('requestId')
     if not isinstance(url, str) or not valid_source(url) or not isinstance(request_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{8,100}', request_id):
         return jsonify(success=False, code='INVALID_REQUEST'), 400
+    try:
+        credentials = cloud_credentials(data.get('storageCloud'))
+    except Exception:
+        return jsonify(success=False, code='STORAGE_NOT_CONFIGURED'), 503
     if not _slot.acquire(blocking=False):
         response = jsonify(success=False, code='MEDIA_BUSY')
         response.headers['Retry-After'] = '10'
@@ -119,7 +148,7 @@ def download():
     try:
         directory = tempfile.mkdtemp(prefix='render-download-')
         process = subprocess.Popen([sys.executable, __file__, '--child', directory], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, start_new_session=True)
-        output, _ = process.communicate(json.dumps({'url': url, 'requestId': request_id}), timeout=270)
+        output, _ = process.communicate(json.dumps({'url': url, 'requestId': request_id, 'storageCloud': credentials['cloud_name']}), timeout=270)
         result = json.loads(output)
         return jsonify(result), (200 if result.get('success') else result.get('httpStatus', 502))
     except subprocess.TimeoutExpired:
@@ -143,7 +172,7 @@ def run_child(data, directory):
     import cloudinary.uploader
     import core
     import yt_dlp
-    cloudinary.config(cloud_name=os.environ['CLOUDINARY_CLOUD_NAME'], api_key=os.environ['CLOUDINARY_API_KEY'], api_secret=os.environ['CLOUDINARY_API_SECRET'], secure=True)
+    cloudinary.config(**cloud_credentials(data.get('storageCloud')), secure=True)
     public_id = 'postflow-fetch/video-' + data['requestId']
     source_hash = hashlib.sha256(data['url'].encode()).hexdigest()
     try:
@@ -175,7 +204,7 @@ def run_child(data, directory):
     path = max(files, key=lambda p: p.stat().st_size)
     if path.stat().st_size > MAX_BYTES:
         return {'success': False, 'code': 'MEDIA_TOO_LARGE', 'httpStatus': 413}
-    asset = cloudinary.uploader.upload(str(path), resource_type='video', public_id=public_id, overwrite=False, timeout=80, context={'source_sha256': source_hash})
+    asset = cloudinary.uploader.upload(str(path), resource_type='video', public_id=public_id, overwrite=False, backup=False, timeout=80, context={'source_sha256': source_hash})
     return result(asset, info.get('description') or info.get('title') or '')
 
 
